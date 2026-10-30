@@ -8,9 +8,9 @@ hstcal/provenance.json. No installed executable is patched silently.
 From the repository:
 
     PYTHON=python3.11 CFITSIO_PREFIX=/path/to/cfitsio-prefix \
-      bash support/bootstrap.sh /absolute/hst-env /absolute/hst-software
-    export PATH=/absolute/hst-env/bin:/absolute/hst-software/hstcal-install/bin:$PATH
-    python support/check_environment.py --hstcal /absolute/hst-software/hstcal-install/bin
+      bash support/bootstrap.sh /absolute/hst-env
+    export PATH=/absolute/hst-env/bin:$PATH
+    python support/check_environment.py --hstcal /absolute/hst-env/bin
 
 CFITSIO_PREFIX is unnecessary when pkg-config locates cfitsio. On erebus CFITSIO
 is supplied by the base Python Conda prefix, independently of OBSERVING/HST.
@@ -28,3 +28,8 @@ token is needed after observations are downloaded. No tokens or data are package
 Support is included in source distributions and wheels at share/hstpipe/support.
 bootstrap.sh installs a source checkout. Wheel users install extras then run the
 installed hstcal/build.sh separately. check_environment.py performs imports only.
+
+HSTCAL is installed directly into the virtualenv bin/lib directories. Build
+trees use a temporary directory and are removed after installation. For a
+read-only checksum/regression check use check_stis_products.py --run RUN
+[--baseline PREVIOUS_RUN].

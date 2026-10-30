@@ -29,3 +29,10 @@ All 3,883 files from the old observational HST tree were preserved by verified
 hard links in the new archive. No active runtime symlink resolves into the old
 tree. The old directory was not deleted automatically. Migration and scientific
 validation reports reside beside the data, not in the installable package.
+
+Installation consolidation: 31 native files copied byte-identically into .venv,
+with ldd resolving all HST libraries there. A real relocated X2D control reproduced
+SCI/ERR/DQ exactly. All six cache receipts were migrated only after verifying
+identical native bytes and unchanged stage-output hashes; resume reused every
+stage. All 66 tests pass. Separate software and administration folders were
+removed; setup records reside in reduction logs/setup and diagnostics/fluxcal/setup.

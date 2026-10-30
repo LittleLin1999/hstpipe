@@ -1,0 +1,43 @@
+diff --git a/pkg/stis/lib/cs7/x2dcorr7.c b/pkg/stis/lib/cs7/x2dcorr7.c
+index b23a1ba..4f96c86 100644
+--- a/pkg/stis/lib/cs7/x2dcorr7.c
++++ b/pkg/stis/lib/cs7/x2dcorr7.c
+@@ -7,6 +7,7 @@
+ 	FreeInang
+ */
+ 
++# include <stdlib.h>
+ # include <math.h>
+ # include <stdio.h>
+ # include <string.h>
+@@ -152,7 +153,10 @@ SingleGroup *out           o: output data
+ 
+ 	iac.allocated = 0;
+ 
+-	sts->x2dcorr_o = PERFORM;	/* initial value for current order */
++	/* STIS_COORD_EXPORT: coordinate logging only; no numeric changes. */
++        char *mapfile = getenv("STIS_COORD_EXPORT");
++        double *mapbuf = mapfile ? malloc(2*out->sci.data.nx*out->sci.data.ny*sizeof(double)) : NULL;
++        sts->x2dcorr_o = PERFORM;	/* initial value for current order */
+ 
+ 	if (strcmp (sts->opt_elem, "PRISM") == 0)
+ 	    disp_type = PRISM_DISP;
+@@ -263,6 +267,7 @@ SingleGroup *out           o: output data
+ 		   input pixel units.  (can be out of bounds)
+ 		*/
+ 		ApplyLT (ix_r, iy_r, sts->ltm, sts->ltv, &ix, &iy);
++                if(mapbuf) { long k=2*((long)j*out->sci.data.nx+i); mapbuf[k]=ix; mapbuf[k+1]=iy; }
+ 
+ /* compute jacobian */
+ 		jacobian = 1.;	/* stub */
+@@ -277,7 +282,9 @@ SingleGroup *out           o: output data
+ 	    }
+ 	}
+ 
+-	/* Flag areas that are beyond the slit or behind an occulting bar. */
++	if(mapbuf) { FILE *fp=fopen(mapfile,"wb"); if(!fp) return 1;
++        fwrite(mapbuf,sizeof(double),2*out->sci.data.nx*out->sci.data.ny,fp); fclose(fp); free(mapbuf); }
++        /* Flag areas that are beyond the slit or behind an occulting bar. */
+ 	if ((status = DataMasked (sts, coord_o, slit, out)))
+ 	    return (status);
+ 

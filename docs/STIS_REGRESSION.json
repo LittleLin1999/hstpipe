@@ -1,0 +1,15 @@
+{
+  "config.py": "AST identical after explicit path-string migration",
+  "resampling.py": "AST identical after explicit path-string migration",
+  "diagnostics.py": "AST identical after explicit path-string migration",
+  "io.py": "AST identical after explicit path-string migration",
+  "background.py": "AST identical after explicit path-string migration",
+  "products.py": "AST identical after explicit path-string migration",
+  "coadd.py": "AST identical after explicit path-string migration",
+  "extraction.py": "AST identical after explicit path-string migration",
+  "geometry.py": "AST identical after explicit path-string migration",
+  "reference.py": "AST identical after explicit path-string migration",
+  "workflow.py": "AST identical after explicit path-string migration",
+  "optimal.py": "AST identical after explicit path-string migration",
+  "calibration.py": "AST identical after explicit path-string migration"
+}

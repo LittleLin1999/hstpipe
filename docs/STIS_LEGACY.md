@@ -1,3 +1,6 @@
+> Historical science-method notes. Current installation, CLI and paths are
+> documented in INSTALLATION.md and WORKFLOWS.md.
+
 # STIS reduction scripts
 
 `reduce_stis.py` is the single entry point. Reusable science modules live in

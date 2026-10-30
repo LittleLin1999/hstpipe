@@ -8,7 +8,7 @@ description = "Independent STIS spectroscopy and WFC3 UVIS imaging workflows"
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.24", "astropy>=5.3", "PyYAML>=6"]
 [project.optional-dependencies]
-stis = ["scipy>=1.10", "matplotlib>=3.7", "drizzle>=3", "stistools>=1.4"]
+stis = ["scipy>=1.10", "matplotlib>=3.7", "drizzle>=3", "stistools>=1.4", "stsci.tools>=4"]
 uvis = ["drizzlepac>=3.6"]
 all = ["hstpipe[stis,uvis]"]
 test = ["pytest>=7"]
@@ -18,3 +18,8 @@ hstpipe = "hstpipe.cli:main"
 where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+[tool.setuptools.data-files]
+"share/hstpipe/support" = ["support/bootstrap.sh", "support/check_environment.py", "support/README.md"]
+"share/hstpipe/support/hstcal" = ["support/hstcal/build.sh", "support/hstcal/hstcal_coordinate_export.patch", "support/hstcal/LICENSE_hstcal.txt", "support/hstcal/provenance.json"]
+
+"share/hstpipe/support/environments" = ["support/environments/erebus-python311.lock.txt"]

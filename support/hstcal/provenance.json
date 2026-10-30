@@ -1,0 +1,7 @@
+{
+  "upstream": "https://github.com/spacetelescope/hstcal.git",
+  "commit": "8f6332d6b7120f12d7bde9debd0990a22e6ce18b",
+  "patch_sha256": "b5854242aed9a4641fb624e32f28cfdd3d7cf8eb7d9a1037d6d444fda783b6e1",
+  "coordinate_format": "native-endian float64, output-Y/output-X/XY order; ix,iy interleaved",
+  "numerical_validation": "Export-enabled and ordinary HSTCAL SCI checked for exact equality by reference.prepare"
+}

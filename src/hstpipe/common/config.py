@@ -32,6 +32,10 @@ class ReductionConfig:
             if key in data.get('options',{}):
                 p=Path(data['options'][key]).expanduser()
                 data['options'][key]=str(p if p.is_absolute() else path.parent/p)
+        for key in ('background_masks','amplifier_masks'):
+            for name,value in data.get('options',{}).get(key,{}).items():
+                p=Path(value).expanduser()
+                data['options'][key][name]=str(p if p.is_absolute() else path.parent/p)
         return cls(**data)
 
     def effective(self):return asdict(self)

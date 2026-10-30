@@ -119,6 +119,7 @@ def extract_image(
 
 def write_spectrum(path, columns, metadata, provenance, descriptions=()):
     """Write a custom one-row-per-wavelength FITS table, with explicit conventions."""
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
     table = Table(columns)
     for name in table.colnames:
         if name == "WAVELENGTH":
@@ -708,8 +709,8 @@ def run_extraction(config):
     spectra_dir.mkdir(exist_ok=True)
     final = config.output / "products" / config.product_name("x1d")
     outputs = [
-        spectra_dir / (config.name + suffix)
-        for suffix in ("_from2d_x1d.fits", "_individual_x1d_coadd.fits")
+        spectra_dir / subdir / (config.name + suffix)
+        for subdir,suffix in (("drz","_from2d_x1d.fits"), ("flt","_individual_x1d_coadd.fits"))
     ]
     if final.exists() or any(p.exists() for p in outputs) or any(directory.glob("*_bkgsub_counts.fits")):
         raise FileExistsError(
@@ -848,6 +849,9 @@ def run_extraction(config):
             "BKGERR is fully correlated bound; COVAR1_STAT_APER is adjacent-bin statistical covariance.",
         ],
     )
+    write_spectrum(spectra_dir/'x2d'/(config.name+'_fromx2d_x1d.fits'), frommast,
+        dict(PRODTYPE='CUSTOM_X2D_APERTURE_1D', **metadata),
+        [dict(input=mast.name,sha256=digest(mast))])
     for p in outputs:
         with fits.open(p, checksum=True) as hd:
             if not all(

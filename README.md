@@ -1,7 +1,7 @@
 # hstpipe
 
 Installable HST/STIS spectroscopy and WFC3 UVIS imaging code. Observations and
-reductions live outside the installed package. This refactor has not run redux.
+reductions live outside the installed package. Standalone installation and the six-exposure STIS reduction have been validated on erebus.
 
 ## Installation
 
@@ -94,8 +94,8 @@ redux/{target}/uvis/{filter}/[setup]/
 Directories are created only when used. Instrument stages use shared outer paths;
 STIS retains its internal formats and per-exposure names. The final X1D retains
 FLT/DRZ/X2D tables, independent DQ_BOX/DQ_OPT, full-aperture normalized masked
-optimal fitting and point/diffuse/morph conventions. See docs/ARCHITECTURE.md for
-exact migration details and incomplete infrastructure features.
+optimal fitting and point/diffuse/morph conventions. See docs/WORKFLOWS.md for current directory and restart behavior, and
+docs/INSTALLATION.md for reproducible native/Python installation.
 
 Use `hstpipe.stis` for STIS imports and the `hstpipe stis` CLI. The old
 `stispipe` and `stis_pipeline` compatibility namespaces and `stispipe` command
@@ -106,6 +106,11 @@ legacy workflow stages.
 
 Run `pytest`. Synthetic STIS scientific tests, shared infrastructure, import/CLI,
 UVIS API dispatch and subarray metadata tests do not execute observations.
-The DrizzlePac adapters require real-data validation before science use.
+The DrizzlePac adapters require real UVIS data validation before science use.
 See docs/ARCHITECTURE.md and docs/STIS_REGRESSION.json for preserved science and
 remaining limitations. COS and ACS are not implemented.
+
+Current validation: 66 tests pass in an isolated environment. The two final STIS
+SCI arrays match the prior validated reduction exactly; 1D flux differences are
+below 6e-16 of peak. All six scientific stages were reused in an explicit
+stage-resume test. No real UVIS reduction was executed.

@@ -38,8 +38,8 @@ def exposure_plot(path, e, result, valid):
 
 def validate_products(config, paths, grid, input_hashes, background_reports):
     """Checksums, matched photometry and independent source-adjacent residuals."""
-    out = config.output / "diagnostics"
-    out.mkdir(exist_ok=True)
+    out = config.output / "diagnostics/coadd"
+    out.mkdir(parents=True,exist_ok=True)
     arrays = []
     for path in paths:
         with fits.open(path, checksum=True) as h:
@@ -224,7 +224,7 @@ def extraction_diagnostics(config, image_spectrum, individual_coadd,
     changes meaning with ``flux_mode`` and is not the default final-product
     flux when ``flux_mode='point'``.
     """
-    directory = config.output / "intermediate/x1d"
+    directory = config.output / "diagnostics/extraction"
     wave = image_spectrum["WAVELENGTH"]
     good = (image_spectrum["DQ"] == 0) & (individual_coadd["DQ"] == 0)
     a, b = image_spectrum["FLUX"], individual_coadd["FLUX_APER"]
@@ -400,7 +400,7 @@ def residual_summary(config, path, grid, reports):
         ax.imshow(image, origin="lower", aspect="auto", extent=extent, norm=norm,
                   cmap="RdBu_r", interpolation="none")
         ax.set(title=title, xlabel="Wavelength [A]", ylabel="Slit position [arcsec]")
-    out = config.output / "diagnostics"
+    out = config.output / "diagnostics/coadd"
     fig.savefig(out / "residual_comparison.png", dpi=150)
     plt.close(fig)
     bands = [(1205,1225), (1295,1315), (1345,1365), (1400,1450), (1450,1500), (1550,1600)]
@@ -473,8 +473,8 @@ def rectified_background_plot(path, science, model, valid, wave, spatial, label)
 
 def mast_background_report(config, grid, unclean, before, after, reports):
     """Document the two distinct x2d background operations and their impact."""
-    out = config.output/'diagnostics'
-    out.mkdir(exist_ok=True)
+    out = config.output/'diagnostics/coadd'
+    out.mkdir(parents=True,exist_ok=True)
     wave = grid.wave_start + np.arange(grid.nx)*grid.wave_step
     spatial = grid.spatial_start + np.arange(grid.ny)*grid.spatial_step
     valid = (after['DQ'] == 0) & np.isfinite(after['SCI'])
@@ -646,7 +646,7 @@ def extraction_fit_plot(directory, label, science, stat_error, bkg_error, valid,
 
 def extraction_branch_plot(config, branches):
     """Compare FLT/DRZ/X2D in the same final calibration mode, with uncertainties."""
-    out=config.output/'intermediate/x1d'
+    out=config.output/'diagnostics/extraction'
     fig,axes=plt.subplots(3,1,figsize=(14,10),sharex=True,constrained_layout=True)
     for ax,(name,data) in zip(axes,branches.items()):
         wave=data['WAVELENGTH']
@@ -670,7 +670,7 @@ def extraction_branch_plot(config, branches):
     axes[-1].set_xlabel('Heliocentric wavelength [A]')
     fig.savefig(out/'all_branches.png',dpi=150);plt.close(fig)
     # Summarize actual saved fits; this is part of the repeatable extraction stage.
-    fitsummary={p.stem:json.loads(p.read_text()) for p in sorted((out/'diagnostics').glob('*_fit.json'))}
+    fitsummary={p.stem:json.loads(p.read_text()) for p in sorted(out.glob('*_fit.json'))}
     lines=['# Extraction diagnostics', '',
         'All three final branches use the selected '+config.extraction.flux_mode+' calibration.',
         'Boxcar and empirical-profile spectra have separate error arrays. The latter uses equal-noise weights, not inverse-variance MAMA weights.',
@@ -712,7 +712,7 @@ def extraction_branch_plot(config, branches):
 
 def extraction_coverage_plot(config, branches):
     """Show method-specific validity and observed-profile support, not filled gaps."""
-    out=config.output/'intermediate/x1d'
+    out=config.output/'diagnostics/extraction'
     fig,axes=plt.subplots(3,1,figsize=(13,8),sharex=True,constrained_layout=True)
     summary={}
     for ax,(name,data) in zip(axes,branches.items()):

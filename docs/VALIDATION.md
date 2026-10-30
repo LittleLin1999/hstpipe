@@ -1,22 +1,31 @@
-# Code-only validation
+# Standalone validation on erebus
 
-2026-10-30: editable installation succeeded on erebus with Python 3.11.
-62 tests pass (53 preserved STIS tests and 9 infrastructure/adapter tests).
-Five existing low-sample background variance warnings remain.
-The test process used the existing Drizzle 3 source installation because the
-server's default environment has an older incompatible Drizzle API.
+2026-10-30: isolated Python 3.11 virtualenv, no inherited system site-packages.
+All extras installed from declared dependencies. pip check passes. HSTCAL was
+built afresh at the new software root from the pinned commit/patch, with CFITSIO
+supplied by the base Conda prefix. No old observational software path is needed.
 
-Tests covered masked extraction, background algorithms, coaddition math,
-calibration conversions, hstpipe public imports, public imports, installed CLI,
-YAML paths, raw/redux separation, product names, file inventory, duplicate
-contents, subarray metadata, cache invalidation, and mocked DrizzlePac dispatch.
-The recorded AST comparison confirms only the documented path literals changed
-in the preserved STIS modules. This is not a real-data numerical regression.
+66 tests pass. Existing five low-sample background variance warnings remain.
+Tests cover native STIS scientific behavior, independent masks/weights, YAML,
+metadata, constant-array imsets, inventory, duplicates, cache invalidation,
+partial resume, force/rebuild archiving, installed CLI, optional imports, UVIS
+API dispatch, supplied sky-mask diagnostics, and subarray metadata.
 
-No observational reduction was run. No real UVIS alignment, cosmic-ray rejection,
-sky subtraction or photometric validation was performed. Package-level imports
-were checked without loading DrizzlePac. See ARCHITECTURE.md for remaining
-stage-cache and directory migration work.
+Actual six-exposure J1022+0841/G140L reduction completed through both independent
+2D branches and consolidated FLT/DRZ/X2D extraction. Both 2D SCI arrays equal the
+prior validated outputs exactly. Boxcar fluxes equal the prior outputs; optimal
+flux differences are below 6e-16 of peak (roundoff). DQ and NEXP match. Final FITS
+checksums/WCS/units and original input identities pass. Only wavelength-edge
+bins are masked: 980 finite FLT/X2D bins, 981 DRZ bins. The previous empirical
+optimal-profile branch-flux discrepancy remains a scientific limitation; this
+refactor does not claim to solve it.
 
-Compatibility namespace removal: all STIS tests now import hstpipe.stis;
-only the hstpipe console entry point is installed. No science module changed.
+Explicit stage-resume reused prepare, background, joint_drizzle, mast_coadd,
+validate and extract with no numerical recomputation. Source/wheel distributions
+include the support recipe, native pin/checksum, environment checker and lock.
+No real UVIS astrometric or photometric reduction was performed.
+
+All 3,883 files from the old observational HST tree were preserved by verified
+hard links in the new archive. No active runtime symlink resolves into the old
+tree. The old directory was not deleted automatically. Migration and scientific
+validation reports reside beside the data, not in the installable package.

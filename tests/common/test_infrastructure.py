@@ -44,3 +44,42 @@ def test_config_paths_and_raw_protection(tmp_path):
     path=tmp_path/'config.yaml';path.write_text('input: raw/stis\noutput: redux\ninstrument: stis\n')
     c=ReductionConfig.read(path);assert c.input==str(tmp_path/'raw/stis')
     with pytest.raises(ValueError):ReductionConfig(str(tmp_path),str(tmp_path/'redux'),'stis')
+
+def test_constant_hst_imset(tmp_path):
+    from hstpipe.common.fits import imsets
+    path=tmp_path/'acquisition_raw.fits'
+    hd=[fits.PrimaryHDU(),fits.ImageHDU(np.ones((7,8)),name='SCI')]
+    hd[1].header['EXTVER']=1
+    for name in ('ERR','DQ'):
+        h=fits.ImageHDU(name=name)
+        for key,value in dict(EXTVER=1,PIXVALUE=0,NPIX1=8,NPIX2=7).items():h.header[key]=value
+        hd.append(h)
+    fits.HDUList(hd).writeto(path)
+    assert imsets(path)==[1]
+
+def test_resume_in_existing_directory_and_cache(tmp_path):
+    from hstpipe.common.runner import run
+    raw=tmp_path/'raw';raw.mkdir();exposure(raw/'a_flc.fits')
+    c=ReductionConfig(str(raw),str(tmp_path/'redux'),'uvis',resume=True)
+    paths=ReductionPaths(tmp_path/'redux','TEST','uvis','F606W')
+    paths.directory.mkdir(parents=True)
+    calls=[]
+    def engine(config,paths,rows):
+        calls.append(True)
+        p=paths.area('products',create=True)/'test.txt';p.write_text('complete')
+        return [p]
+    run(c,engine)
+    assert len(calls)==1
+    run(c,engine)
+    assert len(calls)==1
+
+def test_force_rebuilds_even_with_resume(tmp_path):
+    from hstpipe.common.runner import run
+    raw=tmp_path/'raw';raw.mkdir();exposure(raw/'a_flc.fits')
+    c=ReductionConfig(str(raw),str(tmp_path/'redux'),'uvis',resume=True)
+    calls=[]
+    def engine(config,paths,rows):
+        calls.append(True);p=paths.area('products',create=True)/'result.txt';p.write_text(str(len(calls)));return [p]
+    run(c,engine);c.force=True;run(c,engine)
+    assert len(calls)==2
+    assert list((tmp_path/'redux/TEST/uvis').glob('F606W.previous-*'))

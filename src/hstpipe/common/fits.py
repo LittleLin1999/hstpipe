@@ -8,7 +8,13 @@ def imsets(path):
         versions=[int(h.header.get('EXTVER',1)) for h in hd if h.name=='SCI']
         if not versions:raise ValueError(f'No SCI HDU: {path}')
         for v in versions:
-            shapes=[hd[name,v].data.shape for name in ('SCI','ERR','DQ')]
+            shapes=[]
+            for name in ('SCI','ERR','DQ'):
+                hdu=hd[name,v]
+                if hdu.data is not None:shapes.append(hdu.data.shape)
+                elif 'PIXVALUE' in hdu.header:
+                    shapes.append((hdu.header['NPIX2'],hdu.header['NPIX1']))
+                else:raise ValueError(f'Empty {name} imset {v}: {path}')
             if len(set(shapes))!=1:raise ValueError(f'Mismatched imset {v}: {path}')
         return versions
 

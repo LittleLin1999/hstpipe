@@ -10,6 +10,7 @@ from .paths import ReductionPaths
 from .cache import StageCache
 from .provenance import identity,write_manifest,versions
 from .logging import reduction_logger
+from .streams import stage_log
 
 def run(config,engine,dry_run=False):
     if isinstance(config,(str,Path)):config=ReductionConfig.read(config)
@@ -31,26 +32,34 @@ def run(config,engine,dry_run=False):
         refs=[]
         for key in ('reference_dir','control_dir'):
             if config.options.get(key):refs.extend(p for p in Path(config.options[key]).rglob('*') if p.is_file())
-        key=cache.key([e.path for e in exposures]+code+refs,dict(config=options,versions=versions()))
-        if config.resume and cache.valid('reduction',key):outputs.append(paths.directory);continue
-        if paths.directory.exists():
+        native=[]
+        if config.instrument=="stis":
+            for name in ("cs6.e","cs7.e"):
+                executable=shutil.which(name)
+                if executable:native.append(Path(executable))
+        key=cache.key([e.path for e in exposures]+code+refs+native,dict(config=options,versions=versions()))
+        if config.resume and not config.force and cache.valid('reduction',key):outputs.append(paths.directory);continue
+        if paths.directory.exists() and (config.force or not config.resume):
             if not config.force:raise FileExistsError('Existing or stale reduction; choose --resume with matching cache or --force')
             # Preserve prior run for review, rather than overwrite or delete it.
             import time
             backup=paths.directory.with_name(paths.directory.name+'.previous-'+str(time.time_ns()))
             paths.directory.rename(backup)
-        paths.directory.mkdir(parents=True)
+        paths.directory.mkdir(parents=True,exist_ok=True)
         log=reduction_logger(paths);log.info('Starting %s: %s',config.instrument,plan['inputs'])
         (paths.directory/'config.yaml').write_text(yaml.safe_dump(config.effective(),sort_keys=False))
         inputs=[identity(e.path) for e in exposures]
         manifest=paths.directory/'manifest.json'
         write_manifest(manifest,status='running',inputs=inputs,configuration=config.effective())
         try:
-            products=engine(config,paths,rows)
+            with stage_log(paths.area("logs")/"stages.log"):
+                products=engine(config,paths,rows)
             if [identity(e.path) for e in exposures]!=inputs:raise RuntimeError('Original observations changed')
             write_manifest(manifest,status='complete',inputs=inputs,configuration=config.effective(),
-                products=[identity(p) for p in products],calibration=[identity(p) for p in refs])
-            artifacts=[p for p in paths.directory.rglob('*') if p.is_file() and '.cache' not in p.parts and 'logs' not in p.parts]
+                products=[identity(p) for p in products],calibration=[identity(p) for p in refs],
+                native_software=[identity(p) for p in native],
+                validation_files=[str(p.relative_to(paths.directory)) for p in paths.area("diagnostics").rglob("*.json")])
+            artifacts=[p for p in paths.directory.rglob('*') if p.is_file() and '.cache' not in p.parts and 'logs' not in p.parts and '.previous' not in p.parts]
             cache.record('reduction',key,artifacts);log.info('Complete: %s',products)
             outputs.append(paths.directory)
         except Exception as exc:

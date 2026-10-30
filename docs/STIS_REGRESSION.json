@@ -1,15 +1,54 @@
 {
-  "config.py": "AST identical after explicit path-string migration",
-  "resampling.py": "AST identical after explicit path-string migration",
-  "diagnostics.py": "AST identical after explicit path-string migration",
-  "io.py": "AST identical after explicit path-string migration",
-  "background.py": "AST identical after explicit path-string migration",
-  "products.py": "AST identical after explicit path-string migration",
-  "coadd.py": "AST identical after explicit path-string migration",
-  "extraction.py": "AST identical after explicit path-string migration",
-  "geometry.py": "AST identical after explicit path-string migration",
-  "reference.py": "AST identical after explicit path-string migration",
-  "workflow.py": "AST identical after explicit path-string migration",
-  "optimal.py": "AST identical after explicit path-string migration",
-  "calibration.py": "AST identical after explicit path-string migration"
+  "config.py": {
+    "unchanged_since_package_commit": true,
+    "validation": "Real-data 2D exact equality / 1D machine-roundoff regression; path and orchestration changes only"
+  },
+  "resampling.py": {
+    "unchanged_since_package_commit": true,
+    "validation": "Real-data 2D exact equality / 1D machine-roundoff regression; path and orchestration changes only"
+  },
+  "diagnostics.py": {
+    "unchanged_since_package_commit": false,
+    "validation": "Real-data 2D exact equality / 1D machine-roundoff regression; path and orchestration changes only"
+  },
+  "io.py": {
+    "unchanged_since_package_commit": true,
+    "validation": "Real-data 2D exact equality / 1D machine-roundoff regression; path and orchestration changes only"
+  },
+  "background.py": {
+    "unchanged_since_package_commit": true,
+    "validation": "Real-data 2D exact equality / 1D machine-roundoff regression; path and orchestration changes only"
+  },
+  "products.py": {
+    "unchanged_since_package_commit": true,
+    "validation": "Real-data 2D exact equality / 1D machine-roundoff regression; path and orchestration changes only"
+  },
+  "coadd.py": {
+    "unchanged_since_package_commit": true,
+    "validation": "Real-data 2D exact equality / 1D machine-roundoff regression; path and orchestration changes only"
+  },
+  "extraction.py": {
+    "unchanged_since_package_commit": false,
+    "validation": "Real-data 2D exact equality / 1D machine-roundoff regression; path and orchestration changes only"
+  },
+  "geometry.py": {
+    "unchanged_since_package_commit": true,
+    "validation": "Real-data 2D exact equality / 1D machine-roundoff regression; path and orchestration changes only"
+  },
+  "reference.py": {
+    "unchanged_since_package_commit": true,
+    "validation": "Real-data 2D exact equality / 1D machine-roundoff regression; path and orchestration changes only"
+  },
+  "workflow.py": {
+    "unchanged_since_package_commit": true,
+    "validation": "Real-data 2D exact equality / 1D machine-roundoff regression; path and orchestration changes only"
+  },
+  "optimal.py": {
+    "unchanged_since_package_commit": true,
+    "validation": "Real-data 2D exact equality / 1D machine-roundoff regression; path and orchestration changes only"
+  },
+  "calibration.py": {
+    "unchanged_since_package_commit": true,
+    "validation": "Real-data 2D exact equality / 1D machine-roundoff regression; path and orchestration changes only"
+  }
 }

@@ -1,2 +1,3 @@
 recursive-include support *.py *.sh *.patch *.txt *.md *.json
 recursive-include docs *.md *.json
+include setup.sh requirements.txt

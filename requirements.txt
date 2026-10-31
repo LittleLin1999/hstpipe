@@ -1,0 +1,3 @@
+# Run from the repository root: python -m pip install -r requirements.txt
+# pyproject.toml owns dependency versions; install both instruments and tests.
+-e .[all,test]

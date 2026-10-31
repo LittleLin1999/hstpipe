@@ -5,7 +5,9 @@ CFITSIO shared libraries/headers, and pkg-config. OpenMP is disabled in the
 recipe. The upstream HSTCAL revision and patch checksum are pinned in
 hstcal/provenance.json. No installed executable is patched silently.
 
-From the repository:
+The main entry point is `bash setup.sh /absolute/hst-env` (see the root README).
+Use `bash setup.sh --check` to check prerequisites without creating an environment.
+The native helper remains available directly. From the repository:
 
     PYTHON=python3.11 CFITSIO_PREFIX=/path/to/cfitsio-prefix \
       bash support/bootstrap.sh /absolute/hst-env

@@ -3,6 +3,7 @@ import numpy as np
 from astropy.table import Table
 from tweakwcs.matchutils import XYXYMatch
 from tweakwcs.linearfit import iter_linear_fit
+from .spatial_residuals import spatial_residuals
 
 # Mathematical minima. Scientific validation is assessed separately below.
 MINIMUM={'shift':1,'rshift':2,'rscale':2,'general':3}
@@ -119,12 +120,16 @@ def quality(reference,image,error,options,geometry='shift',identities_verified=F
         rejected=int((~keep).sum()),outlier_fraction=float((~keep).mean()),baseline_pix=span,center=center.tolist(),shift=shift.tolist(),matrix=matrix.tolist(),
         rotation_deg=float(np.rad2deg(np.arctan2(matrix[1,0],matrix[0,0]))),rotation_convention='Counterclockwise mapping of measured image TAN coordinates into reference TAN coordinates',scale=scale,residuals_pix=(reference-predicted).tolist(),
         validation_scope='local_shift_only' if keep.sum()==1 else ('limited_redundancy' if not loo else 'source_constrained'),
-        residual_trend_pix=float(np.max(np.abs(np.nan_to_num(np.corrcoef(np.column_stack([image[keep],res]).T)[:2,2:])))) if len(res)>2 and np.std(res)>1e-10 else None)
+        spatial_systematic=spatial_residuals(image[keep],res,errors[keep],options))
+    r['residual_position_correlation']=r['spatial_systematic']['max_abs_correlation']
+    # Legacy field is dimensionless despite its historical name. Diagnostic only.
+    r['residual_trend_pix']=r['residual_position_correlation']
     if f.get('proper_rotation_solver'):r['proper_rotation_solver']=f['proper_rotation_solver']
     good=r['outlier_fraction']<=options['max_outlier_fraction'] and fitrms<=limit and uncertainty<=options['max_transform_error_pix']
     if loo:good&=r['loo_rms_pix']<=limit*1.5
     if geometry in ('rshift','rscale'):good&=rot_constrained
-    if keep.sum()>10:good&=(r['residual_trend_pix'] or 0)<=options.get('max_residual_trend',.6)
+    good&=not r['spatial_systematic']['exceeds_accuracy']
+    if r['spatial_systematic']['exceeds_accuracy']:r['rejection_reason']='Spatial systematic amplitude exceeds the residual accuracy requirement, including uncertainty'
     good&=np.linalg.norm(shift)<=options['max_shift_pix'] and abs(r['rotation_deg'])<=options['max_rotation_deg'] and abs(scale-1)<=options['max_scale_change']
     r['status']='validated' if good and actual<=options['max_current_rms_pix'] and np.linalg.norm(offset)<=options['max_offset_pix'] else ('refinement_supported' if good else 'unreliable_fit')
     if good and not loo and not identities_verified:r['status']='candidate_fit_only'
@@ -248,6 +253,7 @@ def joint_models(xy,catalogs,options):
                 validation_scope='anchor_frame' if i==0 else ('local_shift_only' if n==1 else ('limited_redundancy' if n==MINIMUM[geom] else 'source_constrained')),
                 independent_validation='No independent catalog or held-out objects in joint fit; model stability and no-CR image QA assessed separately',
                 rotation_fixed_reason='Anchored frame' if i==0 else ('Single source: retain calibrated rotation' if n==1 else ('Rotation not statistically justified' if geom=='shift' else None)))
+            r['spatial_systematic']=spatial_residuals(observed[inside],delta[inside],sigma[inside],options)
             fits.append(r)
         return dict(status='fit_supported',fits=fits,chi2=chi2,degrees_of_freedom=dof,measurement_inlier_mask=keep.tolist(),measurement_residuals_pix=delta.tolist(),
                     residual_rms_pix=float(np.sqrt(np.mean(np.sum(delta[keep]**2,axis=1)))),residual_definition='Individual HST measurements versus shared fitted source positions; not independent validation',source_positions=final.x[source_start:].reshape(-1,2).tolist())

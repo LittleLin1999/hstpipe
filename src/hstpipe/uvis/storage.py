@@ -16,7 +16,7 @@ def references(options,rows):
 def stage_keys(cache,rows,options,copies,identification=None):
     package=Path(__file__).parent
     background_code=[package/n for n in ('background.py','amplifiers.py','fits.py','inventory.py','dq.py')]
-    alignment_code=[package/n for n in ('alignment.py','fits.py','inventory.py','dq.py')]+list((package/'astrometry').glob('relative*.py'))+[package/'astrometry/sources.py',package/'astrometry/matching.py',package/'astrometry/centroids.py']
+    alignment_code=[package/n for n in ('alignment.py','fits.py','inventory.py','dq.py')]+list((package/'astrometry').glob('relative*.py'))+[package/'astrometry/sources.py',package/'astrometry/matching.py',package/'astrometry/spatial_residuals.py',package/'astrometry/centroids.py']
     cr_code=[package/n for n in ('drizzle.py','qa.py')]
     raw=[e.path for e in rows]
     refs=references(options,rows)

@@ -17,6 +17,7 @@ from ..chips import match_provenance
 
 def evaluate(inputs,catalogs,options,paths,label,histogram=True,geometry='shift'):
     with fits.open(inputs[0]) as hd:tangent=WCS(hd['SCI'].header,hd)
+    options=dict(options,pixel_scale_arcsec=float(np.sqrt(abs(np.linalg.det(tangent.pixel_scale_matrix)))*3600))
     xy=[project(c,p,tangent) for p,c in zip(inputs,catalogs)];pairs=[]
     for i in range(1,len(inputs)):
         try:
@@ -46,6 +47,7 @@ def overlap_graph(inputs,catalogs,options,paths,label):
     Direct-reference validation remains conservative for chain-only fields.
     """
     with fits.open(inputs[0]) as hd:tangent=WCS(hd['SCI'].header,hd)
+    options=dict(options,pixel_scale_arcsec=float(np.sqrt(abs(np.linalg.det(tangent.pixel_scale_matrix)))*3600))
     xy=[project(c,p,tangent) for p,c in zip(inputs,catalogs)];edges=[]
     for i in range(len(inputs)):
         for j in range(i+1,len(inputs)):
@@ -333,7 +335,7 @@ def refine_relative(inputs,paths,options,identification=None):
                     for geom in ([] if method in ('image_cross_correlation','offset_histogram','identified_sources') else geometries):
                         if geom!='shift' and options['fit_geometry']=='auto':
                             support=evaluate(inputs,cats,options,paths,f'rel{index}_model_support',True)
-                            if not any(p.get('residual_trend_pix',0)>.3 and p.get('matched',0)>=MINIMUM[geom] for p in support['pairs']):
+                            if not any(p.get('spatial_systematic',{}).get('significant',False) and (p.get('spatial_systematic',{}).get('amplitude_pix') or 0)>=options['min_improvement_pix'] and p.get('matched',0)>=MINIMUM[geom] for p in support['pairs']):
                                 entry.setdefault('skipped_models',[]).append(dict(geometry=geom,reason='No source-supported spatial residual trend'));continue
                         for p,d in zip(inputs,candidate):paths.copy(p,d)
                         try:tweak(candidate,cats,work,options,geom,method in ('offset_histogram','iterative_mosaic'))
@@ -592,6 +594,7 @@ def joint_registration(inputs,catalogs,options,paths):
     """Assess common-source models before blind strategies; commit only after QA."""
     from .relative_fit import joint_models
     with fits.open(inputs[0]) as hd:reference=detector_wcs(hd,hd['SCI'].header.get('EXTVER',1))
+    options=dict(options,pixel_scale_arcsec=float(np.sqrt(abs(np.linalg.det(reference.pixel_scale_matrix)))*3600))
     xy=[project(c,p,reference) for c,p in zip(catalogs,inputs)]
     result=joint_models(xy,catalogs,options)
     for i,f in enumerate(result.get('fits',[])):f['exposure']=inputs[i].name
@@ -607,7 +610,7 @@ def joint_registration(inputs,catalogs,options,paths):
         limit=min(options['max_scatter_pix'],max(options['scatter_floor_pix'],options['centroid_sigma']*f['centroid_precision_pix']))
         f['scatter_limit_pix']=limit
         rot=f['rotation_deg'] or 0.
-        f['fit_acceptable']=bool(f['postfit_scatter_pix']<=limit and f['transform_uncertainty_pix']<=options['max_transform_error_pix'] and f['outlier_fraction']<=options['max_outlier_fraction'] and np.linalg.norm(f['shift'])<=options['max_shift_pix'] and abs(rot)<=options['max_rotation_deg'] and abs(f['scale']-1)<=options['max_scale_change'])
+        f['fit_acceptable']=bool(not f.get('spatial_systematic',{}).get('exceeds_accuracy',False) and f['postfit_scatter_pix']<=limit and f['transform_uncertainty_pix']<=options['max_transform_error_pix'] and f['outlier_fraction']<=options['max_outlier_fraction'] and np.linalg.norm(f['shift'])<=options['max_shift_pix'] and abs(rot)<=options['max_rotation_deg'] and abs(f['scale']-1)<=options['max_scale_change'])
         # Propagate correction covariance over the actual multi-chip footprint,
         # rather than judging a rotation solely at its fitted source centroid.
         field=[]

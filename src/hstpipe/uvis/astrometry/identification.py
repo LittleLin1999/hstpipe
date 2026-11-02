@@ -437,5 +437,5 @@ def associate_full_field(image,candidate,catalog,options,paths=None,label='ident
 
 def identification_key(cache,inputs,astrometry):
     options=astrometry['source_identification']
-    code=[Path(__file__),Path(__file__).with_name('stellar.py'),Path(__file__).with_name('source_recovery.py'),Path(__file__).with_name('centroids.py'),Path(__file__).with_name('catalogs.py'),Path(__file__).with_name('full_field.py'),Path(__file__).with_name('common_sources.py'),Path(__file__).with_name('wcs.py'),Path(__file__).with_name('relative_fit.py'),Path(__file__).parents[1]/'dq.py']
+    code=[Path(__file__),Path(__file__).with_name('stellar.py'),Path(__file__).with_name('source_recovery.py'),Path(__file__).with_name('centroids.py'),Path(__file__).with_name('catalogs.py'),Path(__file__).with_name('full_field.py'),Path(__file__).with_name('common_sources.py'),Path(__file__).with_name('wcs.py'),Path(__file__).with_name('relative_fit.py'),Path(__file__).with_name('spatial_residuals.py'),Path(__file__).parents[1]/'dq.py']
     return cache.key(inputs+code,dict(options=options,detection=astrometry['relative']['detection'],catalog_options=astrometry['catalogs'],versions=versions()))

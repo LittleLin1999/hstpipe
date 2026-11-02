@@ -190,6 +190,7 @@ def _summary(key,record,workflow_error=None,astrometry_context=None):
     if astrometry_context is not None:
         from .report_astrometry import render
         content+=render(astrometry_context,record)
+    content+=_spatial_summary(record)
     content+=_absolute_summary(record)
     content+=_source_validation_summary(record)
     content+=_chips(record)
@@ -273,3 +274,22 @@ def generate_report(directory):
     state['report']=dict(path=str(output),bytes=len(data),limit_bytes=LIMIT,self_contained=True,embedded_figures=len(figures),astrometric_details_embedded=True,science_readiness='ready' if ready else 'review_required')
     save(statefile,state)
     return output
+
+
+def _spatial_summary(record):
+    a=record.get('scientific_assessment',{});transfer=a.get('relative_after_tweakback',{})
+    pairs=transfer.get('pairs',[])
+    if not pairs:pairs=a.get('relative_astrometry',{}).get('original',{}).get('pairs',[])
+    def fmt(value):return '—' if value is None else f'{value:.4g}'
+    rows=[]
+    for p in pairs:
+        r=p.get('after',p);t=r.get('spatial_systematic',{})
+        if not t:continue
+        values=[p.get('exposure',''),r.get('geometry',''),str(r.get('robust_inliers',r.get('matched',''))),
+            fmt(r.get('postfit_scatter_pix')),fmt(t.get('max_abs_correlation')),
+            fmt(t.get('amplitude_pix'))+' ± '+fmt(t.get('amplitude_uncertainty_pix')),
+            fmt(t.get('amplitude_mas')),t.get('status',''),r.get('status','')]
+        rows.append('<tr>'+''.join('<td>'+_escape(v)+'</td>' for v in values)+'</tr>')
+    if not rows:return ''
+    headers=['Exposure','Model','Inliers','RMS (pix)','|correlation|','Systematic amplitude ± uncertainty (pix)','Amplitude (mas)','Spatial assessment','WCS validation']
+    return '<h3>Spatial residual assessment</h3><p>Correlation is diagnostic only. Weighted first-order trends are evaluated over matched-source coverage, with centroid-error and leave-one-out uncertainty. Underconstrained trends do not independently fail alignment.</p><table><tr>'+''.join('<th>'+h+'</th>' for h in headers)+'</tr>'+''.join(rows)+'</table>'

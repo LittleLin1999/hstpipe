@@ -81,6 +81,7 @@ def validate_relative_transfer(relative_inputs,working_inputs,relative,options,p
     before=[relative_inputs[i] for i in order];after=[working_inputs[i] for i in order];cats=[catalogs[i] for i in order]
     with fits.open(before[0]) as hd:old=WCS(hd['SCI'].header,hd)
     with fits.open(after[0]) as hd:new=WCS(hd['SCI'].header,hd)
+    options=dict(options,pixel_scale_arcsec=float(np.sqrt(abs(np.linalg.det(old.pixel_scale_matrix)))*3600))
     a=[project(c,p,old) for c,p in zip(cats,before)];b=[project(c,p,new) for c,p in zip(cats,after)];pairs=[]
     for i in range(1,len(before)):
         try:

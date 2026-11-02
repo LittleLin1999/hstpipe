@@ -56,7 +56,7 @@ def internal_cross_filter(directory,selected,options):
                 elif key==anchor:record.update(status='anchor',source_count=len(catalogs[key]))
                 else:
                     cache=paths.cache()
-                    deps=[Path(__file__),Path(__file__).with_name('sources.py'),Path(__file__).with_name('relative_fit.py'),Path(__file__).with_name('relative_engine.py'),Path(__file__).with_name('wcs.py'),Path(__file__).with_name('centroids.py')]
+                    deps=[Path(__file__),Path(__file__).with_name('sources.py'),Path(__file__).with_name('relative_fit.py'),Path(__file__).with_name('spatial_residuals.py'),Path(__file__).with_name('relative_engine.py'),Path(__file__).with_name('wcs.py'),Path(__file__).with_name('centroids.py')]
                     params=dict(target=signature(available[key][0]),anchor=signature(available[anchor][0]),options=options['cross_filter'],relative=effective['relative'],detection=effective['relative']['detection'])
                     cachekey=cache.key(deps,params);output=paths.file('intermediate','alignment','cross_filter')
                     if cache.valid('uvis_cross_filter',cachekey):record=json.loads(output.read_text())

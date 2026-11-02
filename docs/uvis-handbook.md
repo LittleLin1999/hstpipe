@@ -109,8 +109,9 @@ products are preserved.
 
 ## Sampling and optional measures
 
-driz_sep_pixfrac remains 1.0. Default final scale 0.04 arcsec/pixel, square kernel
-and pixfrac 1.0 favor coverage with small exposure sets. Commanded offsets,
+driz_sep_pixfrac remains 1.0. The configured final defaults are 0.04 arcsec/pixel,
+a square kernel and pixfrac 0.8. Final WHT/source-core checks must verify coverage
+after shrinking the drops. Commanded offsets,
 effective sampling settings, WHT coverage and correlation diagnostics are saved.
 An approximately 0.0333 arcsec/pixel grid is configurable after evaluating actual
 dither sampling and science needs; neither smaller pixels nor smaller pixfrac is

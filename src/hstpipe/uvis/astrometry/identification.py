@@ -325,7 +325,7 @@ def identify(inputs,paths,astrometry):
                     selected=r.get('psf_selected'),reason=r['reason'],audit_file=r.get('psf_audit_file')))
     for r in records:
         selected=r.pop('psf_selected',None);r.pop('psf_audit',None)
-        r['centroid_method']='PSFPhotometry' if selected else 'full_field_detector'
+        r['centroid_method']=selected.get('detection_method','PSFPhotometry') if selected else 'full_field_detector'
         r['psf_fwhm_pix']=selected['fwhm_pix'] if selected else np.nan
         r['psf_audit_file']=r.get('psf_audit_file','')
     associations=Table(rows=records) if records else Table(names=['source_id','exposure','status'],dtype=['U64','U64','U64'])
@@ -422,7 +422,7 @@ def associate_full_field(image,candidate,catalog,options,paths=None,label='ident
             from .stellar import apply_selection,choose_profile,diagnostic
             fits_records=[q for a in psf_records for q in a['fits']]
             audit=dict(status='candidate_psf_assessment',raw_candidates=len(possible),duplicates=sum(a.get('duplicates',0) for a in psf_records),rejected=sum(a.get('rejected',0) for a in psf_records),fits=fits_records,
-                model='Native-pixel CircularGaussianPRF; residual-inflated formal errors and fitting-window stability; all shared pixel QC retained')
+                model='; '.join(dict.fromkeys(a.get('model','Native HST profile assessment') for a in psf_records)))
             good=[q for q in fits_records if q['status']=='credible_stellar_fit']
             result.update(status='ambiguous_stellar_profiles' if len(good)>1 else 'no_reliable_stellar_profile',reason=f'{len(good)} credible stellar profiles from {len(possible)} HST candidates',psf_audit=audit)
             apply_selection(result,choose_profile(good,None,options));diagnostic(image,result,paths,label)

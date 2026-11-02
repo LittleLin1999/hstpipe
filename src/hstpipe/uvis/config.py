@@ -3,7 +3,7 @@ from .astrometry.config import DEFAULTS as ASTROMETRY_DEFAULTS
 DEFAULTS=dict(execution=dict(target_workers=1,filter_workers=1),astrometry=ASTROMETRY_DEFAULTS,background=dict(mode='auto',threshold=2.5,dilate=8,target_radius=3.0,min_blank=0.2,
     min_pixels=1000,significance=3.0,box_size=128,user={},amplifier_correction=False,amplifier_assess=False,dq_ignore_bits=0,source_fills_field=False),
     alignment=dict(mode='auto',minobj=10,max_rms=0.3,max_shift=10.0,fitgeometry='shift',max_sources=1000),
-    drizzle=dict(final_scale=0.04,final_pixfrac=1.0,final_kernel='square',final_wht_type='EXP',
+    drizzle=dict(final_scale=0.04,final_pixfrac=0.8,final_kernel='square',final_wht_type='EXP',
     driz_cr_snr='3.5 3.0',driz_cr_scale='1.2 0.7',driz_sep_pixfrac=1.0,driz_sep_scale=None,
     driz_sep_bits=80,final_bits=80),exclude=[],allow_incomplete_calibration=False,
     target_cr_fraction=0.02,keep_drizzle_intermediates=False)

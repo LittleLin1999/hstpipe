@@ -25,7 +25,7 @@ def scene(flc,stars=((64.,64.,5000.),),cosmics=()):
     return p,cat,prior
 
 def resolve(p,cat,prior):
-    options=settings({})['astrometry']
+    options=settings({'astrometry':{'source_identification':{'psf_resolution':{'profile_method':'psf'}}}})['astrometry']
     return associate_full_field(p,prior,cat,options['source_identification'],detection=options['relative']['detection'])
 
 def test_star_among_cosmic_candidates_is_resolved_without_nearest_or_brightest(flc):
@@ -145,3 +145,64 @@ def test_rejected_nonfinite_psf_diagnostics_remain_json_serializable(flc,tmp_pat
     diagnostic(p,r,paths,'nonfinite_test')
     saved=json.loads(Path(r['psf_audit_file']).read_text())
     assert saved==audit and identity(p)==before
+
+
+def aperture_resolve(p,c,g):
+    a=settings({})['astrometry']
+    return associate_full_field(p,g,c,a['source_identification'],detection=a['relative']['detection'])
+
+
+def test_aperture_default_uses_measured_centroid_without_psf_fit(flc,monkeypatch):
+    from photutils.psf import PSFPhotometry
+    def forbidden(*args,**kwargs):raise AssertionError('Aperture profile must not run PSF fitting')
+    monkeypatch.setattr(PSFPhotometry,'__call__',forbidden)
+    p,c,g=scene(flc,stars=((72.2,67.1,800.),),cosmics=((64.,64.),))
+    before=identity(p);r=aperture_resolve(p,c,g)
+    assert r['status']=='valid_detection'
+    q=r['psf_selected'];assert q['x']==72.2 and q['y']==67.1
+    assert q['detection_method']=='aperture_profile' and 'qfit' not in q
+    assert 0<q['concentration']<1 and q['concentration_error']>0
+    assert r['psf_audit']['rejected']==1 and identity(p)==before
+
+
+@pytest.mark.parametrize('bit',[256,8192])
+def test_aperture_profile_never_recovers_masked_core(flc,bit):
+    p,c,g=scene(flc)
+    with fits.open(p,mode='update') as hd:hd['DQ',7].data[63:66,63:66]=bit
+    r=aperture_resolve(p,c,g)
+    assert r['status']=='no_reliable_stellar_profile'
+    assert 'masked_core_centroid' in r['psf_audit']['fits'][0]['reason']
+
+
+def test_aperture_concentration_helps_identity_without_position_constraint():
+    from hstpipe.uvis.astrometry.stellar import choose_profile
+    anchor=dict(flux=1000.,flux_error=30.,flux_rate=10.,fwhm_pix=2.3,
+        concentration=.5,concentration_error=.01,aperture_radii_pix=[1.25,5.])
+    a=dict(anchor,x=1000.,y=-1000.);b=dict(anchor,concentration=.2,x=0.,y=0.)
+    assert choose_profile([a,b],anchor,{}) is a
+    assert choose_profile([a,dict(a)],anchor,{}) is None
+
+
+def test_aperture_neighbors_remain_unresolved(flc):
+    p,c,g=scene(flc,stars=((62.,64.,5000.),(66.,64.,4000.)))
+    r=aperture_resolve(p,c,g);assert r['status']!='valid_detection'
+
+
+def test_aperture_policy_invalidates_association_only(flc,tmp_path):
+    from hstpipe.uvis.astrometry.identification import identification_key
+    from hstpipe.uvis.astrometry.full_field import detection_key
+    p=flc();cache=ReductionPaths(tmp_path/'redux','TEST','uvis','F275W').cache()
+    a=settings({})['astrometry'];b=settings({'astrometry':{'source_identification':{'psf_resolution':{'profile_method':'psf'}}}})['astrometry']
+    assert identification_key(cache,[p],a)!=identification_key(cache,[p],b)
+    assert detection_key(cache,[p],a['relative'])==detection_key(cache,[p],b['relative'])
+
+
+def test_aperture_reuses_full_field_context_without_global_sky(flc):
+    from hstpipe.uvis.astrometry.stellar import fit_candidates
+    from hstpipe.uvis.astrometry.centroids import pixel_masks
+    p,c,g=scene(flc);a=settings({})['astrometry'];d=a['relative']['detection']
+    with fits.open(p) as hd:
+        dq,base,mask=pixel_masks(hd,7,d)
+        ctx={7:dict(data=np.asarray(hd['SCI',7].data,float),error=np.asarray(hd['ERR',7].data,float),dq=dq,base=base,mask=mask)}
+    good,audit=fit_candidates(p,c,7,d,a['source_identification'],ctx)
+    assert len(good)==1 and good[0]['detection_method']=='aperture_profile'

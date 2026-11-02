@@ -1,8 +1,8 @@
 """Resolve stellar identity using native HST pixels, never catalog-fit coordinates.
 
-The Gaussian PRF is a centroiding proxy, not a calibrated HST photometric PSF.
-Model residuals inflate formal errors and independent fitting windows test
-centroid stability. Multiple credible stars remain ambiguous until an HST
+Aperture concentration is the default compact-source profile diagnostic.
+Measured HST centroids retain shared pixel QC; concentration is not a stellar
+classification by itself. Optional Gaussian PRF fitting remains available. Multiple credible stars remain ambiguous until an HST
 reference profile discriminates them; distance/brightness never select a winner.
 """
 from pathlib import Path
@@ -15,13 +15,110 @@ from .centroids import pixel_masks,validate_centroids
 from ..fits import image_data
 from .wcs import detector_wcs
 
-DEFAULTS=dict(enabled=True,fit_shape=7,check_shape=9,xy_bounds=2.,fwhm_bounds_factors=[.55,1.8],
+DEFAULTS=dict(enabled=True,profile_method='aperture',aperture_radii_fwhm=[.5,2.],
+    min_aperture_valid_fraction=.9,profile_concentration_fraction=.2,fit_shape=7,check_shape=9,xy_bounds=2.,fwhm_bounds_factors=[.55,1.8],
     max_qfit=.5,max_centroid_error_pix=.3,max_window_shift_pix=.2,duplicate_radius_pix=.6,
     group_separation_pix=5.,profile_flux_fraction=.2,profile_width_fraction=.2)
 
 def stellar_options(options):return dict(DEFAULTS,**options.get('psf_resolution',{}))
 
 def fit_candidates(image,catalog,version,detection,options,contexts=None):
+    method=stellar_options(options)['profile_method']
+    if method=='aperture':return aperture_candidates(image,catalog,version,detection,options,contexts)
+    if method=='psf':return psf_candidates(image,catalog,version,detection,options,contexts)
+    raise ValueError('profile_method must be aperture or psf')
+
+
+def aperture_candidates(image,catalog,version,detection,options,contexts=None):
+    """Native-pixel concentric aperture fluxes; never replace HST centroids.
+
+    Fractional pixel weights come from Photutils. ERR propagation includes the
+    covariance of nested apertures and their shared local background. Masked
+    pixels are excluded, never filled or area-corrected to invent core flux.
+    """
+    from photutils.aperture import CircularAperture
+    opts=stellar_options(options);version=int(version);rows=[]
+    contexts=contexts if contexts is not None else {}
+    with fits.open(image) as hd:
+        if version not in contexts:
+            data=np.asarray(hd['SCI',version].data,float);dq,base,mask=pixel_masks(hd,version,detection)
+            contexts[version]=dict(data=data,dq=dq,base=base,mask=mask,error=np.asarray(image_data(hd['ERR',version]),float),sky=0.,rms=1.)
+        ctx=contexts[version];ctx.setdefault('sky',0.);ctx.setdefault('rms',1.)
+        a=ctx['data'];error=ctx['error'];mask=ctx['mask']
+        scale=np.sqrt(abs(np.linalg.det(detector_wcs(hd,version).pixel_scale_matrix)))*3600
+        fwhm=detection.get('fwhm_arcsec',.1)/scale if detection.get('fwhm_arcsec') else detection.get('fwhm_pixels',2.5)
+        radii=np.asarray(opts['aperture_radii_fwhm'],float)*fwhm
+        if len(radii)!=2 or not (0<radii[0]<radii[1]):raise ValueError('Require positive increasing inner/outer aperture radii')
+        initial=np.column_stack([catalog['x'],catalog['y']]).astype(float)
+        for index,row in enumerate(catalog):
+            x,y=initial[index];entry=dict(index=index,source_id=str(row['hst_source_id']),extver=version,status='rejected')
+            if not np.isfinite([x,y]).all():
+                rows.append(dict(entry,reason='nonfinite_centroid'));continue
+            radius=max(13,int(np.ceil(3*radii[1])));ix=int(round(x));iy=int(round(y))
+            sx=slice(max(0,ix-radius),min(a.shape[1],ix+radius+1));sy=slice(max(0,iy-radius),min(a.shape[0],iy+radius+1))
+            data=a[sy,sx];err=error[sy,sx];bad=mask[sy,sx]|~np.isfinite(err)|(err<=0)
+            yy,xx=np.indices(data.shape);blank=~bad.copy()
+            for bx,by in initial:
+                if np.isfinite([bx,by]).all():blank&=np.hypot(xx+sx.start-bx,yy+sy.start-by)>max(7.,radii[1])
+            if blank.sum()<30:
+                rows.append(dict(entry,reason='insufficient_local_background'));continue
+            _,sky,noise=sigma_clipped_stats(data[blank])
+            # Conservative median-background error, including read noise from ERR.
+            skyvar=np.pi/2*max(float(noise)**2,float(np.median(err[blank]**2)))/blank.sum()
+            weights=[];coverage=[]
+            for radius in radii:
+                ap=CircularAperture((x-sx.start,y-sy.start),r=float(radius))
+                w=ap.to_mask(method='exact').to_image(data.shape)
+                if w is None:w=np.zeros(data.shape)
+                w=np.where(bad,0.,w);coverage.append(float(w.sum()/ap.area));weights.append(w)
+            wi,wo=weights;safe=np.where(bad,0.,data-float(sky));var=np.where(bad,0.,err**2)
+            fi=float(np.sum(wi*safe));fo=float(np.sum(wo*safe))
+            vi=float(np.sum(wi**2*var)+wi.sum()**2*skyvar);vo=float(np.sum(wo**2*var)+wo.sum()**2*skyvar)
+            cov=float(np.sum(wi*wo*var)+wi.sum()*wo.sum()*skyvar)
+            concentration=fi/fo if fo>0 else np.nan
+            ratioerr=np.sqrt(max(0.,vi+concentration**2*vo-2*concentration*cov))/fo if fo>0 else np.nan
+            snr=fo/np.sqrt(vo) if vo>0 else np.nan
+            raw=Table(dict(x=[x],y=[y],extver=[version],flux=[fo],snr=[snr],local_sky=[float(sky)],
+                centroid_error_pix=[float(row['centroid_error_pix']) if 'centroid_error_pix' in row.colnames else np.nan]))
+            clean,audit=validate_centroids(image,raw,detection,method='aperture_profile',contexts={version:ctx},return_all=True)
+            q=audit[0];reasons=[]
+            if not len(clean):reasons.append('pixel_qc:'+str(q['quality_flags']))
+            if min(coverage)<opts['min_aperture_valid_fraction']:reasons.append('insufficient_aperture_coverage')
+            if not np.isfinite([fi,fo,vi,vo,concentration,ratioerr]).all() or fi<=0 or fo<=0 or vo<=0:reasons.append('invalid_aperture_flux')
+            if float(q['centroid_error_pix'])>opts['max_centroid_error_pix']:reasons.append('poor_centroid_precision')
+            if float(q['fwhm_pix'])>opts['fwhm_bounds_factors'][1]*fwhm:reasons.append('extended_profile')
+            entry.update(initial_x=float(x),initial_y=float(y),x=float(x),y=float(y),fwhm_pix=float(q['fwhm_pix']),
+                width_pix=float(q['width_pix']),ellipticity=float(q['ellipticity']),centroid_error_pix=float(q['centroid_error_pix']),
+                snr=float(snr),flux=fo,flux_error=float(np.sqrt(vo)),flux_rate=fo/float(hd[0].header['EXPTIME']),
+                inner_flux=fi,inner_flux_error=float(np.sqrt(vi)),concentration=float(concentration),concentration_error=float(ratioerr),
+                aperture_radii_pix=radii.tolist(),aperture_valid_fraction=coverage,local_sky=float(sky),local_noise=float(noise),
+                core_valid_fraction=float(q['core_valid_fraction']),window_stability_pix=float(q['centroid_stability_pix']),
+                original_detection_method=str(row['detection_method']) if 'detection_method' in row.colnames else 'custom',
+                detection_method='aperture_profile',profile_class='compact_candidate',reason=';'.join(reasons),
+                status='rejected' if reasons else 'credible_stellar_fit')
+            rows.append(entry)
+    good=[]
+    for r in sorted((r for r in rows if r['status']=='credible_stellar_fit'),key=lambda r:r['centroid_error_pix']):
+        duplicate=next((q for q in good if np.hypot(q['x']-r['x'],q['y']-r['y'])<opts['duplicate_radius_pix']),None)
+        if duplicate:r.update(status='duplicate_fit',reason='Duplicate native HST detection',duplicate_of=duplicate['source_id'])
+        else:good.append(r)
+    # Simple apertures do not deblend distinct neighboring compact sources.
+    contaminated=set()
+    for i,r in enumerate(good):
+        for j,q in enumerate(good[:i]):
+            if np.hypot(r['x']-q['x'],r['y']-q['y'])<radii[1]:contaminated.update((i,j))
+    for i in contaminated:good[i].update(status='rejected',reason='neighbor_inside_outer_aperture; deblending requires optional PSF assessment')
+    good=[r for r in good if r['status']=='credible_stellar_fit']
+    for r in rows:
+        for k,v in list(r.items()):
+            if isinstance(v,(float,np.floating)) and not np.isfinite(v):r[k]=None
+    return good,dict(status='unique_compact_profile' if len(good)==1 else ('ambiguous_stellar_profiles' if good else 'no_reliable_stellar_profile'),
+        raw_candidates=len(catalog),duplicates=sum(r['status']=='duplicate_fit' for r in rows),rejected=sum(r['status']=='rejected' for r in rows),fits=rows,
+        model='Photutils concentric aperture concentration; original HST centroids; no Gaussian profile residual gate',
+        uncertainty_method='ERR weighted-sum covariance, nested apertures and shared local-background uncertainty; existing centroid QC',options=opts)
+
+
+def psf_candidates(image,catalog,version,detection,options,contexts=None):
     """Fit supplied HST detections jointly when overlapping, then shared pixel QC.
 
     All coordinates are zero-origin native detector centroids. No external sky
@@ -118,21 +215,27 @@ def choose_profile(good,anchor,options):
     opts=stellar_options(options);passing=[]
     for r in good:
         fluxerr=np.hypot(r['flux_error']/max(r['flux'],1e-12),anchor['flux_error']/max(anchor['flux'],1e-12))
-        if abs(r['flux_rate']/anchor['flux_rate']-1)<=max(opts['profile_flux_fraction'],3*fluxerr) and abs(r['fwhm_pix']/anchor['fwhm_pix']-1)<=opts['profile_width_fraction']:passing.append(r)
+        if 'concentration' in r and 'concentration' in anchor:
+            if not np.allclose(r['aperture_radii_pix'],anchor['aperture_radii_pix']):continue
+            delta=abs(r['concentration']-anchor['concentration'])
+            allowed=max(opts['profile_concentration_fraction']*abs(anchor['concentration']),3*np.hypot(r['concentration_error'],anchor['concentration_error']))
+            profile_ok=delta<=allowed
+        else:profile_ok=abs(r['fwhm_pix']/anchor['fwhm_pix']-1)<=opts['profile_width_fraction']
+        if abs(r['flux_rate']/anchor['flux_rate']-1)<=max(opts['profile_flux_fraction'],3*fluxerr) and profile_ok:passing.append(r)
     return passing[0] if len(passing)==1 else None
 
 def install_measurement(catalog,result):
     idx=np.flatnonzero(np.asarray(catalog['hst_source_id']).astype(str)==result['hst_source_id'])
-    if len(idx)!=1:raise ValueError('PSF centroid lacks its native HST detection identity')
+    if len(idx)!=1:raise ValueError('Profile assessment lacks its native HST detection identity')
     k=int(idx[0])
     for field in ('x','y','snr','width_pix','ellipticity','centroid_error_pix'):
         if field in catalog.colnames:catalog[field][k]=result[field]
     catalog['flux'][k]=result['psf_selected']['flux']
-    if 'detection_method' in catalog.colnames:catalog['detection_method'][k]='PSFPhotometry'
+    if 'detection_method' in catalog.colnames:catalog['detection_method']=np.asarray(catalog['detection_method']).astype('U64');catalog['detection_method'][k]=result['psf_selected'].get('detection_method','PSFPhotometry')
 
 def apply_selection(result,selected):
     if selected is None:return result
-    result.update(status='valid_detection',reason='Native-pixel PRF fit and shared centroid QC; external position used for identification only',
+    result.update(status='valid_detection',reason=('Concentric-aperture compact profile and existing HST centroid QC' if selected.get('detection_method')=='aperture_profile' else 'Native-pixel PRF fit and shared centroid QC')+'; external position used for identification only',
         extver=selected['extver'],x=selected['x'],y=selected['y'],snr=selected['snr'],width_pix=selected['width_pix'],
         ellipticity=selected['ellipticity'],centroid_error_pix=selected['centroid_error_pix'],flux_rate=selected['flux_rate'],
         hst_source_id=selected['source_id'],psf_selected=selected)
@@ -169,5 +272,5 @@ def profile_figure(inputs,records,paths,source_id):
             q=r['selected_hst'];ax.plot(q['x'],q['y'],'+',color='lime',ms=12,mew=2)
         ax.set_title(image.stem+' SCI'+str(v)+'\n'+r['status']);ax.set_xlabel('Native detector X');ax.set_ylabel('Native detector Y')
     for ax in list(axes.flat)[len(present):]:ax.axis('off')
-    fig.suptitle(source_id+' — green selected; red rejected; orange unresolved\nHST pixel fits; catalog coordinates are identification priors only',fontsize=11)
+    fig.suptitle(source_id+' — green selected; red rejected; orange unresolved\nHST profile assessment; catalog coordinates are identification priors only',fontsize=11)
     fig.tight_layout();fig.savefig(paths.file('diagnostics','alignment','stellar_association_'+source_id,'png'),dpi=100);plt.close(fig)

@@ -116,10 +116,26 @@ def annotate_astrometry(path,solution,validation,relative):
         for h in hd:h.add_checksum()
 
 
-def finalize(provisional,relative_inputs,rows,paths,options,drizzle_options,relative,cr_threshold=.02):
+def finalize(provisional,relative_inputs,rows,paths,options,drizzle_options,relative,cr_threshold=.02,*,reuse_absolute=False):
     if relative.get('status') not in ('validated','single_exposure'):
         return [],dict(status='relative_astrometry_unvalidated',relative_astrometry=relative,astrometry=dict(status='unvalidated',reason='Relative WCS gate failed; no absolute alignment or TweakBack'))
-    solution,reference=absolute_alignment(provisional,rows,paths,options)
+    if reuse_absolute:
+        # Explicit sampling-only resume freezes a validated external solution.
+        # This avoids fit/code-key refreshes when only final drizzle drops change.
+        cache=paths.cache();receipt=json.loads(cache.receipt('uvis_absolute').read_text())
+        if not cache.valid('uvis_absolute',receipt['key']):raise ValueError('Saved absolute solution or its dependencies changed')
+        expected=json.loads(paths.file('intermediate','drizzle','provisional_inputs').read_text())
+        if [identity(p) for p in relative_inputs]!=expected:raise ValueError('Relative FLC inputs changed since provisional drizzle')
+        solution=json.loads(paths.file('intermediate','alignment','absolute').read_text())
+        if solution['status']!='validated' or science_header(provisional).get('WCSNAME')!=solution['corrected_wcs_name']:
+            raise ValueError('Sampling-only resume requires the accepted provisional absolute WCS')
+        reference_path=Path(solution['reference_catalog'])
+        if str(reference_path.resolve()) not in {str(Path(r['path']).resolve()) for r in receipt['outputs']}:
+            raise ValueError('Absolute reference catalog is not protected by the saved receipt')
+        reference=Table.read(reference_path,format='ascii.ecsv')
+        if solution['reference_mode']=='gaia_dr3':reference=gaia_at_epoch(reference,solution['observation_epoch'])
+        elif solution['reference_mode']=='legacy_dr10':reference=legacy_at_epoch(reference,solution['observation_epoch'])
+    else:solution,reference=absolute_alignment(provisional,rows,paths,options)
     result=dict(astrometry=solution,relative_astrometry=relative)
     if solution['status']!='validated':
         result.update(status='astrometry_unvalidated',final=dict(validation_status='review_required',limitations=['No accepted absolute reference solution; provisional image retained; no new science-ready final DRC']))

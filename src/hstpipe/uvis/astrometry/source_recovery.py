@@ -24,7 +24,7 @@ def recover_missing(inputs,catalogs,common,detection,relative):
     guides=[]
     for sid,rows in groups.items():
         if len(rows)<2:continue
-        if all(str(catalogs[i]['detection_method'][k])=='PSFPhotometry' for i,k in map(node,rows)):guides.append((sid,rows))
+        if all(str(catalogs[i]['detection_method'][k]) in ('PSFPhotometry','aperture_profile') for i,k in map(node,rows)):guides.append((sid,rows))
     if not guides:return []
     guide_id,guide_rows=max(guides,key=lambda item:len(item[1]));guide={byname[str(r['exposure'])]:node(r)[1] for r in guide_rows}
     with fits.open(inputs[0]) as hd:tangent=detector_wcs(hd,hd['SCI'].header.get('EXTVER',1))
@@ -33,7 +33,7 @@ def recover_missing(inputs,catalogs,common,detection,relative):
         if sid==guide_id or len(rows)<3:continue
         refs=[node(r) for r in rows if byname[str(r['exposure'])] in guide]
         if not refs:continue
-        ref,k=min(refs,key=lambda n:(str(catalogs[n[0]]['detection_method'][n[1]])!='PSFPhotometry',float(catalogs[n[0]]['centroid_error_pix'][n[1]])))
+        ref,k=min(refs,key=lambda n:(str(catalogs[n[0]]['detection_method'][n[1]]) not in ('PSFPhotometry','aperture_profile'),float(catalogs[n[0]]['centroid_error_pix'][n[1]])))
         present={byname[str(r['exposure'])] for r in rows}
         for i,image in enumerate(inputs):
             if i in present or i not in guide:continue

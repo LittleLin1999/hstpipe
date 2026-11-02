@@ -263,7 +263,7 @@ def generate_report(directory):
         from .report_alignment import previews
         comparisons,comparison_count=previews(paths,filters,min(300_000,max(0,LIMIT-len((head+body+tail).encode('utf-8'))-8192))) if not state.get('workflow_error') else ([],0)
     except ImportError:comparisons,comparison_count=[],0
-    comparison_html=('<section><h2>Before vs after alignment</h2><p class="muted">Open a filter to compare several common sources. Double images should merge into single sources after a successful correction.</p>'+''.join(comparisons)+'</section>') if comparisons else ''
+    comparison_html=('<section><h2>Before vs after alignment</h2><p class="muted">Open a filter to inspect each exposure separately. After alignment, each source should lie on the same cyan reference cross.</p>'+''.join(comparisons)+'</section>') if comparisons else ''
     body=comparison_html+detail_heading+body
     try:figures=_figures(paths,list(filters),descriptions=descriptions,budget=min(350_000,max(0,LIMIT-len((head+body+tail).encode('utf-8'))-4096)))
     except ImportError:figures=[]

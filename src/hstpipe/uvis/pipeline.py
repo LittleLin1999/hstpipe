@@ -40,7 +40,7 @@ def _engine(config,paths,exposures,*,prepare_only=False):
         rows.append(e)
     if not rows:raise ValueError('All group exposures explicitly excluded')
     report['dq_policy']=policy(opts,len(rows))
-    report['sampling']=dict(final_scale=opts['drizzle']['final_scale'],final_pixfrac=opts['drizzle']['final_pixfrac'],driz_sep_pixfrac=opts['drizzle']['driz_sep_pixfrac'],nimages=len(rows),commanded_offsets={e.metadata['ROOTNAME']:[e.metadata.get('POSTARG1'),e.metadata.get('POSTARG2')] for e in rows},rationale='Conservative default 0.04 arcsec/pixel and pixfrac 1; 0.0333 is configurable after evaluating dither sampling/coverage, not universally superior')
+    report['sampling']=dict(final_scale=opts['drizzle']['final_scale'],final_pixfrac=opts['drizzle']['final_pixfrac'],driz_sep_pixfrac=opts['drizzle']['driz_sep_pixfrac'],nimages=len(rows),commanded_offsets={e.metadata['ROOTNAME']:[e.metadata.get('POSTARG1'),e.metadata.get('POSTARG2')] for e in rows},rationale='Configured final sampling; evaluate dither coverage and source-core weights. Separate-drizzle CR reference pixfrac is recorded independently.')
     background=paths.area('intermediate','background',create=True)
     alignment=paths.area('intermediate','alignment')
     work=paths.area('intermediate','drizzle')

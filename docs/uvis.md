@@ -125,7 +125,7 @@ options:
     mode: auto
   drizzle:
     final_scale: 0.04
-    final_pixfrac: 1.0
+    final_pixfrac: 0.8
     final_kernel: square
     final_wht_type: EXP
   astrometry:
@@ -275,3 +275,11 @@ annotation. Unassessed or failed stages retain reports and review products.
 The four-filter J104242 case passed these checks; that does not validate other
 targets automatically. Precision cross-filter registration and advanced aperture,
 PSF/host or covariance analysis require their own science-specific validation.
+
+
+For a deliberate final-sampling-only Python resume, the existing
+`astrometry.workflow.finalize(..., reuse_absolute=True)` verifies the saved
+absolute-stage receipt, corrected provisional WCS and contributing relative FLC
+identities before restoring headerlets and running the final pass. It does not
+requery or refit absolute astrometry. Modified dependencies stop that resume;
+they require a normal astrometric revalidation. Final image/source QA still runs.

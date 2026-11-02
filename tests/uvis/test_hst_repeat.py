@@ -27,7 +27,8 @@ def test_partial_three_exposure_object_survives_failed_full_catalog_fit(flc):
     selected,common,report=build_common(inputs,cats,external,r)
     assert [len(c) for c in selected]==[2,2,2,1]
     assert report['HST_guide_used'] and report['HST_repeat_components']>=1
-    assert all(p['status']!='validated' for p in report['pairs'])
+    assert any(p['status']!='validated' for p in report['pairs'])
+    assert report['status']=='candidates_established'
 
 def test_repeated_component_resolves_galaxy_without_filling_absent_exposure(flc):
     inputs,cats,external=example(flc);opts=settings({})['astrometry'];selected,common,report=build_common(inputs,cats,external,opts['relative'])
@@ -76,3 +77,26 @@ def test_missing_centroid_is_measured_from_pixels_or_explicitly_rejected(flc,mas
         assert records[0]['status']=='measured_candidate' and len(cats[-1])==4
         assert abs(records[0]['x']-90)<.1 and abs(records[0]['y']-90)<.1
     assert [identity(p) for p in inputs]==before
+
+
+def test_aperture_vetted_guide_keeps_repeated_sources_when_blind_fit_fails(flc):
+    inputs,cats,external=example(flc)
+    for c in cats:
+        c['detection_method']=np.asarray(c['detection_method']).astype('U32')
+        c['detection_method'][0]='aperture_profile'
+    selected,common,report=build_common(inputs,cats,external,settings({})['astrometry']['relative'])
+    assert report['HST_guide_used']
+    assert [len(c) for c in selected]==[2,2,2,1]
+    assert report['HST_repeat_components']>=1
+    assert any(p['status']!='validated' for p in report['pairs'])
+    assert report['status']=='candidates_established'
+
+
+def test_hst_only_repeat_candidates_do_not_require_external_or_psf_labels(flc):
+    inputs,cats,external=example(flc)
+    for c in cats:c['detection_method']=np.full(len(c),'segmentation')
+    selected,common,report=build_common(inputs,cats,external[:0],settings({})['astrometry']['relative'])
+    assert report['initial_wcs_repeat_pairs']>0
+    assert [len(c) for c in selected]==[2,2,2,1]
+    assert not report['HST_guide_used'] and not report['external_positions_used_for_fit']
+    assert report['status']=='candidates_established'

@@ -306,27 +306,23 @@ def identify(inputs,paths,astrometry):
             c.update(ra=float(position['ra']),dec=float(position['dec']),_plot=(i<options.get('max_window_plots',8) or bool(c.get('identification_prior_only',False)) or bool(c['gaia_id'])))
             result=associate_full_field(image,c,full_catalogs[image_index],options,paths,label=image.stem+'_identity_'+str(i+1),models=models[str(image)],detection=astrometry['relative']['detection'],contexts=image_contexts)
             records.append(result)
-    from .stellar import choose_profile,apply_selection,install_measurement,profile_figure
+    from .stellar import install_measurement,profile_figure,resolve_profile_group
     stellar_summary=[]
     for candidate in candidates:
         group=[r for r in records if r['source_id']==str(candidate['source_id'])]
-        anchors=[r['psf_selected'] for r in group if r.get('psf_selected')]
-        anchor=min(anchors,key=lambda r:r['centroid_error_pix']) if anchors else None
+        resolve_profile_group(group,options)
         for r in group:
-            if r.get('psf_audit') and not r.get('psf_selected'):
-                good=[v for v in r['psf_audit']['fits'] if v['status']=='credible_stellar_fit']
-                selected=choose_profile(good,anchor,options)
-                if selected is not None:apply_selection(r,selected);r['reason']+='; consistent with an independently measured HST anchor profile and flux'
             if r.get('psf_selected'):
                 i=next(i for i,p in enumerate(inputs) if p.name==r['exposure']);install_measurement(full_catalogs[i],r)
             if r.get('psf_audit'):
                 stellar_summary.append(dict(exposure=r['exposure'],source_id=r['source_id'],status=r['status'],extver=r['extver'],predicted_x=r['predicted_x'],predicted_y=r['predicted_y'],
                     raw_candidates=r['psf_audit']['raw_candidates'],duplicates=r['psf_audit'].get('duplicates',0),rejected=r['psf_audit'].get('rejected',0),
-                    selected=r.get('psf_selected'),reason=r['reason'],audit_file=r.get('psf_audit_file')))
+                    selected=r.get('psf_selected'),reason=r['reason'],profile_consensus=r.get('profile_consensus'),audit_file=r.get('psf_audit_file')))
     for r in records:
         selected=r.pop('psf_selected',None);r.pop('psf_audit',None)
         r['centroid_method']=selected.get('detection_method','PSFPhotometry') if selected else 'full_field_detector'
         r['psf_fwhm_pix']=selected['fwhm_pix'] if selected else np.nan
+        r.pop('profile_consensus',None)
         r['psf_audit_file']=r.get('psf_audit_file','')
     associations=Table(rows=records) if records else Table(names=['source_id','exposure','status'],dtype=['U64','U64','U64'])
     associations['status']=np.asarray(associations['status']).astype('U64')

@@ -91,7 +91,7 @@ def aperture_candidates(image,catalog,version,detection,options,contexts=None):
                 width_pix=float(q['width_pix']),ellipticity=float(q['ellipticity']),centroid_error_pix=float(q['centroid_error_pix']),
                 snr=float(snr),flux=fo,flux_error=float(np.sqrt(vo)),flux_rate=fo/float(hd[0].header['EXPTIME']),
                 inner_flux=fi,inner_flux_error=float(np.sqrt(vi)),concentration=float(concentration),concentration_error=float(ratioerr),
-                aperture_radii_pix=radii.tolist(),aperture_valid_fraction=coverage,local_sky=float(sky),local_noise=float(noise),
+                aperture_radii_pix=radii.tolist(),aperture_definition=dict(unit='arcsec' if detection.get('fwhm_arcsec') else 'pixel',radii=(radii*scale if detection.get('fwhm_arcsec') else radii).tolist()),aperture_valid_fraction=coverage,local_sky=float(sky),local_noise=float(noise),
                 core_valid_fraction=float(q['core_valid_fraction']),window_stability_pix=float(q['centroid_stability_pix']),
                 original_detection_method=str(row['detection_method']) if 'detection_method' in row.colnames else 'custom',
                 detection_method='aperture_profile',profile_class='compact_candidate',reason=';'.join(reasons),
@@ -210,19 +210,53 @@ def psf_candidates(image,catalog,version,detection,options,contexts=None):
 
 def choose_profile(good,anchor,options):
     """HST-only profile/flux consistency; no coordinate zero-point requirement."""
-    if len(good)==1:return good[0]
-    if not anchor:return None
+    if not anchor:return good[0] if len(good)==1 else None
     opts=stellar_options(options);passing=[]
     for r in good:
         fluxerr=np.hypot(r['flux_error']/max(r['flux'],1e-12),anchor['flux_error']/max(anchor['flux'],1e-12))
         if 'concentration' in r and 'concentration' in anchor:
-            if not np.allclose(r['aperture_radii_pix'],anchor['aperture_radii_pix']):continue
+            if 'aperture_definition' in r and 'aperture_definition' in anchor:
+                a,b=r['aperture_definition'],anchor['aperture_definition']
+                if a['unit']!=b['unit'] or not np.allclose(a['radii'],b['radii']):continue
+            elif not np.allclose(r['aperture_radii_pix'],anchor['aperture_radii_pix']):continue
             delta=abs(r['concentration']-anchor['concentration'])
             allowed=max(opts['profile_concentration_fraction']*abs(anchor['concentration']),3*np.hypot(r['concentration_error'],anchor['concentration_error']))
             profile_ok=delta<=allowed
         else:profile_ok=abs(r['fwhm_pix']/anchor['fwhm_pix']-1)<=opts['profile_width_fraction']
         if abs(r['flux_rate']/anchor['flux_rate']-1)<=max(opts['profile_flux_fraction'],3*fluxerr) and profile_ok:passing.append(r)
     return passing[0] if len(passing)==1 else None
+
+
+def resolve_profile_group(group,options):
+    """Compare every exposure to repeated HST profiles, not a single best row.
+
+    A unique local candidate is still checked against other exposures. Competing
+    equally supported identity assignments stay ambiguous. This identifies
+    candidates only; detector/WCS matching must independently validate them.
+    """
+    records=[r for r in group if r.get('psf_audit')]
+    if len(records)<2:return
+    choices=[[q for q in r['psf_audit']['fits'] if q['status']=='credible_stellar_fit'] for r in records]
+    hypotheses={}
+    for candidates in choices:
+        for anchor in candidates:
+            selected=[choose_profile(good,anchor,options) for good in choices]
+            signature=tuple(q['source_id'] if q else '' for q in selected)
+            support=sum(q is not None for q in selected)
+            if support>=2:hypotheses[signature]=selected
+    support=max((sum(q is not None for q in v) for v in hypotheses.values()),default=0)
+    best=[v for v in hypotheses.values() if sum(q is not None for q in v)==support]
+    chosen=best[0] if len(best)==1 else [None]*len(records)
+    for r,good,selection in zip(records,choices,chosen):
+        r.pop('psf_selected',None)
+        r['profile_consensus']=dict(supporting_exposures=support,competing_assignments=len(best),external_coordinates_used=False)
+        if selection is not None:
+            apply_selection(r,selection)
+            r['reason']+='; repeat HST aperture/profile support in '+str(support)+' exposures; relative validation still required'
+        elif good:
+            r.update(status='inconsistent_profile' if len(best)==1 else 'ambiguous_stellar_profiles',
+                     reason='No unique profile-consistent counterpart across exposures; candidate centroids retained for HST-only matching')
+
 
 def install_measurement(catalog,result):
     idx=np.flatnonzero(np.asarray(catalog['hst_source_id']).astype(str)==result['hst_source_id'])

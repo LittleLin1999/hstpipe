@@ -9,7 +9,11 @@ def ready(record):
 
 def decision(record):
     a=record.get('scientific_assessment',{});rel=a.get('relative_astrometry',a.get('alignment',{}));ab=a.get('astrometry',{})
-    if ready(record):return 'Ready','Final image passed astrometric and image-quality checks.','Use the DRC; retain its recorded limitations.'
+    if ready(record):
+        pairs=rel.get('pairs',[]) or rel.get('original',{}).get('pairs',[])
+        if rel.get('scope')=='sparse_source_constrained' or any(p.get('validation_scope')=='local_shift_only' for p in pairs):
+            return 'Ready with sparse-source limits','Final image checks passed. Relative registration is constrained locally; field rotation is not independently validated.','Use the DRC with the recorded sparse-source astrometric limitation.'
+        return 'Ready','Final image passed astrometric and image-quality checks.','Use the DRC; retain its recorded limitations.'
     if record.get('error'):return 'Processing error',str(record['error'])[:240],'Resolve the recorded processing error, then resume.'
     if record.get('status')=='running':return 'Running','Reduction is still in progress.','Wait for final validation.'
     transfer=a.get('relative_after_tweakback',{})
@@ -20,7 +24,9 @@ def decision(record):
         if failed:
             p=max(failed,key=lambda p:p['postfit_scatter_pix']/p['scatter_limit_pix'])
             why=f"Existing-WCS pair check: {p['postfit_scatter_pix']:.2f} pixel scatter, above its {p['scatter_limit_pix']:.2f} pixel limit. No tested alternative was accepted."
-        else:why='No reliable exposure-to-exposure transformation was accepted.'
+        else:
+            missing=[str(p.get('exposure','')).removesuffix('_flc.fits') for p in pairs if p.get('matched')==0]
+            why=('No reliable common centroid in '+', '.join(missing)+'. Other exposures do not establish this exposure’s registration.') if missing else 'No reliable exposure-to-exposure transformation was accepted.'
         return 'Blocked',why,'Verify common-source identities and centroid consistency; do not force a fit.'
     if ab.get('status') not in ('validated',):return 'Blocked','Relative registration passed; absolute astrometry is not validated.','Review external matches, coverage and residuals.'
     if a.get('status') in ('final_drizzle_pending','provisional_ready'):return 'Pending','Astrometric prerequisites passed; final image validation is pending.','Resume final drizzle and scientific QA.'

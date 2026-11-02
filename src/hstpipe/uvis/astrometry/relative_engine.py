@@ -265,7 +265,13 @@ def refine_relative(inputs,paths,options,identification=None):
         plot_sources(p,c,paths.file('diagnostics','alignment',p.stem+'_relative_sources','png'))
     def completed(cats):
         report['result_state']=('validated_existing' if report.get('method') in ('existing_wcs','joint_existing_wcs') else 'validated_refined') if report.get('may_combine') else ('local_shift_only' if report.get('local_registration',{}).get('status')=='local_only' else 'unvalidated')
-        report['scope']=report.get('scope','full_field') if report.get('may_combine') else 'diagnostic_only'
+        if report.get('may_combine'):
+            edges=report.get('pairs',[]) or (report.get('network') or {}).get('edges',[])
+            sparse=any(p.get('validation_scope') in ('local_shift_only','limited_redundancy') for p in edges if p.get('status')=='validated')
+            report['scope']=report.get('scope','sparse_source_constrained' if sparse else 'common_source_constrained')
+            if sparse:report['warnings'].append('Relative WCS assessed at sparse measured sources; rotation, scale and unsampled field accuracy are not independently validated.')
+            if len(inputs)==1:report['scope']='not_measured_single_exposure'
+        else:report['scope']='diagnostic_only'
         report['detector_catalogs']=[]
         for p,c in zip(inputs,cats):
             output=paths.exposure_file('intermediate','alignment',fits.getheader(p).get('ROOTNAME',p.stem),'relative_sources','ecsv')

@@ -23,7 +23,7 @@ def build_common(inputs,catalogs,external,options,association_options=None):
         if len(idx)==1:labels[(i,int(idx[0]))]=str(r['source_id'])
     def stellar(node):
         i,k=node
-        return 'detection_method' in catalogs[i].colnames and str(catalogs[i]['detection_method'][k])=='PSFPhotometry'
+        return 'detection_method' in catalogs[i].colnames and str(catalogs[i]['detection_method'][k]) in ('PSFPhotometry','aperture_profile')
     labelgroups={label:[n for n,k in labels.items() if k==label] for label in set(labels.values())}
     guided=any(len(group)>=2 and all(stellar(n) for n in group) for group in labelgroups.values())
     for label in set(labels.values()):
@@ -31,7 +31,7 @@ def build_common(inputs,catalogs,external,options,association_options=None):
         if not guided or all(stellar(n) for n in group):
             for n in group[1:]:join(group[0],n)
     with fits.open(inputs[0]) as hd:tangent=detector_wcs(hd,hd['SCI'].header.get('EXTVER',1))
-    xy=[project(c,p,tangent) for p,c in zip(inputs,catalogs)];pairs=[];tentative=[]
+    xy=[project(c,p,tangent) for p,c in zip(inputs,catalogs)];pairs=[];tentative=[];initial_wcs_pairs=0
     for i in range(len(inputs)):
         for j in range(i+1,len(inputs)):
             # An initial offset from shared identities uses measured HST positions only.
@@ -41,11 +41,22 @@ def build_common(inputs,catalogs,external,options,association_options=None):
             trusted=[(a,b) for a,b in known if stellar((i,a)) and stellar((j,b))]
             if trusted:known=trusted
             guess=np.median([xy[i][a]-xy[j][b] for a,b in known],axis=0) if known else None
+            # The calibrated WCS is an association hypothesis, never proof of
+            # registration. Preserve repeated objects near that hypothesis when
+            # artifacts dominate a blind offset histogram. The same maintained
+            # matcher, tolerance, cycle/morphology checks and later fit QA apply.
+            initial_count=0
+            if not known:
+                try:
+                    wi,wj=match(xy[i],xy[j],options,histogram=False,guess=np.zeros(2))
+                    for a,b in zip(wi,wj):tentative.append(((i,int(a)),(j,int(b))))
+                    initial_count=len(wi);initial_wcs_pairs+=initial_count
+                except (ValueError,RuntimeError):pass
             try:
                 ri,ii=match(xy[i],xy[j],options,histogram=guess is None,guess=guess)
                 err=np.hypot(catalogs[i]['centroid_error_pix'][ri],catalogs[j]['centroid_error_pix'][ii])
                 q=quality(xy[i][ri],xy[j][ii],err,options)
-                q.update(reference=inputs[i].name,exposure=inputs[j].name,external_identity_seeds=len(known))
+                q.update(reference=inputs[i].name,exposure=inputs[j].name,external_identity_seeds=len(known),initial_wcs_candidates=initial_count)
                 if trusted:
                     guide_error=float(np.median([np.hypot(catalogs[i]['centroid_error_pix'][a],catalogs[j]['centroid_error_pix'][b]) for a,b in trusted]))
                     residual=xy[i][ri]-xy[j][ii]-guess
@@ -65,6 +76,7 @@ def build_common(inputs,catalogs,external,options,association_options=None):
             except Exception as exc:pairs.append(dict(reference=inputs[i].name,exposure=inputs[j].name,status='matching_failed',error=str(exc)))
     # Preserve repeated HST detections even when artifacts spoil the *whole*
     # blind fit. These are identity candidates, not accepted WCS solutions.
+    tentative=list(dict.fromkeys(tentative))
     candidate_parent={n:n for n in nodes}
     def candidate_root(n):
         while candidate_parent[n]!=n:n=candidate_parent[n]
@@ -111,7 +123,7 @@ def build_common(inputs,catalogs,external,options,association_options=None):
         idx=sorted(chosen);out=c[idx].copy();out['common_source_id']=[chosen[j] for j in idx]
         out.meta['centroid_quality']=dict(version=QUALITY_VERSION,accepted=len(out),purpose='Native HST centroids; common IDs select pairs, never external-coordinate constraints')
         result.append(out)
-    report=dict(status='candidates_established' if any(selected) else 'unresolved',pairs=pairs,matched_nodes=[len(c) for c in result],HST_guide_used=guided,HST_repeat_components=repeat_count,external_positions_used_for_fit=False,
+    report=dict(status='candidates_established' if any(selected) else 'unresolved',pairs=pairs,matched_nodes=[len(c) for c in result],HST_guide_used=guided,HST_repeat_components=repeat_count,initial_wcs_repeat_pairs=initial_wcs_pairs,external_positions_used_for_fit=False,
         validation='Common candidates require relative fit, closure and independent no-CR image QA before acceptance')
     return result,Table(rows=long) if long else Table(names=['source_id','exposure','status'],dtype=['U64']*3),report
 

@@ -20,7 +20,7 @@ def target_alignment(inputs,paths,options,identification=None,catalogs=None,prev
         if common:
             def score(sid):
                 rows=[c[np.asarray(c['common_source_id']).astype(str)==sid][0] for c in catalogs if sid in set(map(str,c['common_source_id']))]
-                stellar=all(str(r['detection_method'])=='PSFPhotometry' for r in rows) if 'detection_method' in catalogs[0].colnames else False
+                stellar=all(str(r['detection_method']) in ('PSFPhotometry','aperture_profile') for r in rows) if 'detection_method' in catalogs[0].colnames else False
                 return (not stellar,max(float(r['centroid_error_pix']) for r in rows),sid)
             selected=sorted(common,key=score)
             if len(selected)>=2:

@@ -82,7 +82,7 @@ def fit_candidates(image,catalog,version,detection,options,contexts=None):
                     entry=dict(index=int(index),source_id=str(catalog['hst_source_id'][index]),extver=version,
                         initial_x=float(initial[index,0]),initial_y=float(initial[index,1]),x=x,y=y,
                         fwhm_pix=width,width_pix=float(audit['width_pix'][0]),ellipticity=float(audit['ellipticity'][0]),
-                        centroid_error_pix=uncertainty,snr=snr,flux=float(r['flux_fit']),flux_error=float(r['flux_err']),
+                        centroid_error_pix=uncertainty,formal_centroid_error_pix=formal,snr=snr,flux=float(r['flux_fit']),flux_error=float(r['flux_err']),
                         original_detection_method=str(catalog['detection_method'][index]) if 'detection_method' in catalog.colnames else 'custom',
                         original_segment_label=int(catalog['segment_label'][index]) if 'segment_label' in catalog.colnames and not np.ma.is_masked(catalog['segment_label'][index]) else None,
                         flux_rate=float(r['flux_fit'])/hd[0].header['EXPTIME'],local_sky=float(sky),local_noise=float(noise),
@@ -98,6 +98,14 @@ def fit_candidates(image,catalog,version,detection,options,contexts=None):
         same=next((q for q in good if np.hypot(q['x']-r['x'],q['y']-r['y'])<opts['duplicate_radius_pix']),None)
         if same:r.update(status='duplicate_fit',reason='Independent initial detections converged to the same stellar centroid',duplicate_of=same['source_id'])
         else:good.append(r)
+    # Rejected native fits may have undefined covariance or morphology. Keep
+    # that evidence as explicit JSON nulls, never as accepted measurements.
+    for row in rows:
+        missing=[key for key,value in row.items()
+                 if isinstance(value,(float,np.floating)) and not np.isfinite(value)]
+        if missing:
+            row['nonfinite_fields']=missing
+            for key in missing:row[key]=None
     return good,dict(status='unique_stellar_profile' if len(good)==1 else ('ambiguous_stellar_profiles' if good else 'no_reliable_stellar_profile'),
         raw_candidates=len(catalog),duplicates=sum(r['status']=='duplicate_fit' for r in rows),rejected=sum(r['status']=='rejected' for r in rows),fits=rows,
         model='Pixel-integrated CircularGaussianPRF centroid proxy; not calibrated PSF photometry',
@@ -154,7 +162,7 @@ def profile_figure(inputs,records,paths,source_id):
             ax.imshow(cut,origin='lower',extent=(x0,x0+cut.shape[1],y0,y0+cut.shape[0]),cmap='gray',norm=ImageNormalize(cut,interval=PercentileInterval(99.5),stretch=AsinhStretch()))
         chosen=(r.get('psf_selected') or r.get('selected_hst') or {}).get('source_id')
         for q in r['psf_audit']['fits']:
-            if 'x' not in q:continue
+            if q.get('x') is None or q.get('y') is None:continue
             color='lime' if q.get('source_id')==chosen else ('orange' if q['status']=='credible_stellar_fit' else 'red')
             ax.plot(q['x'],q['y'],'o',mfc='none',mec=color,ms=9);ax.annotate(str(q['index']+1),(q['x'],q['y']),color=color,fontsize=8)
         if r.get('selected_hst'):

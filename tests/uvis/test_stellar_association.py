@@ -1,6 +1,7 @@
 """Focused image-based counterpart resolution; no live network queries."""
 import numpy as np
 import pytest
+from pathlib import Path
 from astropy.io import fits
 from astropy.table import Table
 from hstpipe.uvis.astrometry.identification import associate_full_field
@@ -121,3 +122,26 @@ def test_psf_policy_changes_invalidate_association_but_not_background_or_detecti
     rows=discover(tmp_path)
     ak=stage_keys(cache,rows,a,[]);bk=stage_keys(cache,rows,b,[])
     assert ak[0]==bk[0] and ak[1]!=bk[1]
+
+
+@pytest.mark.parametrize('field', ['flux_err', 'qfit', 'x_err'])
+def test_rejected_nonfinite_psf_diagnostics_remain_json_serializable(flc,tmp_path,monkeypatch,field):
+    import json
+    from photutils.psf import PSFPhotometry
+    from hstpipe.uvis.astrometry.stellar import diagnostic
+    original=PSFPhotometry.__call__
+    def undefined_measurement(self,*args,**kwargs):
+        result=original(self,*args,**kwargs);result[field]=np.full(len(result),np.nan)
+        return result
+    monkeypatch.setattr(PSFPhotometry,'__call__',undefined_measurement)
+    p,c,g=scene(flc);before=identity(p);r=resolve(p,c,g)
+    assert r['status']=='no_reliable_stellar_profile' and not r.get('psf_selected')
+    audit=r['psf_audit'];assert audit['rejected']==1
+    row=audit['fits'][0]
+    assert 'nonfinite_or_unconstrained_fit' in row['reason']
+    assert row['nonfinite_fields'] and any(row[key] is None for key in row['nonfinite_fields'])
+    json.dumps(audit,allow_nan=False)
+    paths=ReductionPaths(tmp_path/'redux','TEST','uvis','F275W')
+    diagnostic(p,r,paths,'nonfinite_test')
+    saved=json.loads(Path(r['psf_audit_file']).read_text())
+    assert saved==audit and identity(p)==before

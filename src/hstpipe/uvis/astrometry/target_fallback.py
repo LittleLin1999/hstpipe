@@ -7,26 +7,28 @@ from .centroids import QUALITY_VERSION
 from .identification import associate
 from ...common.target_runner import save
 
-def target_alignment(inputs,paths,options,identification=None,catalogs=None):
+def target_alignment(inputs,paths,options,identification=None,catalogs=None,previous_joint=None):
     from .relative_engine import single_source_fallback,native_graph_fit,evaluate,internal_mosaic,image_quality,coadd_reference_catalog
     settings=options.get('local_fallback',{})
     if not settings.get('enabled',True):return dict(status='not_run',reason='Target-specific fallback disabled'),[]
     positions=settings.get('reference_positions',[])
     if not positions and catalogs and len(catalogs)==len(inputs) and all('common_source_id' in c.colnames for c in catalogs):
-        common=set(str(s) for s in catalogs[0]['common_source_id'])
-        for c in catalogs[1:]:common&=set(str(s) for s in c['common_source_id'])
+        counts={}
+        for c in catalogs:
+            for sid in set(map(str,c['common_source_id'])):counts[sid]=counts.get(sid,0)+1
+        common={sid for sid,count in counts.items() if count>=2}
         if common:
             def score(sid):
-                rows=[c[np.asarray(c['common_source_id']).astype(str)==sid][0] for c in catalogs]
+                rows=[c[np.asarray(c['common_source_id']).astype(str)==sid][0] for c in catalogs if sid in set(map(str,c['common_source_id']))]
                 stellar=all(str(r['detection_method'])=='PSFPhotometry' for r in rows) if 'detection_method' in catalogs[0].colnames else False
                 return (not stellar,max(float(r['centroid_error_pix']) for r in rows),sid)
-            selected=sorted(common,key=score)[:12]
-            if len(selected)>=4:
+            selected=sorted(common,key=score)
+            if len(selected)>=2:
                 cats=[c[np.isin(np.asarray(c['common_source_id']).astype(str),selected)] for c in catalogs]
-                return _refine_catalogs(inputs,cats,paths,options,dict(status='unvalidated',method='automatic_field_sources',source_counts=[len(c) for c in cats],available_common_sources=selected,external_coordinates_used_for_fit=False))
+                return _refine_catalogs(inputs,cats,paths,options,dict(status='unvalidated',method='automatic_field_sources',source_counts=[len(c) for c in cats],available_common_sources=selected,external_coordinates_used_for_fit=False),previous_joint=previous_joint)
             # Sparse references constrain local translation; do not manufacture
             # a global fit with an underconstrained source distribution.
-            if len(selected)<4:
+            if len(selected)==1 and counts[selected[0]]==len(inputs):
                 sid=selected[0];cats=[c[np.asarray(c['common_source_id']).astype(str)==sid] for c in catalogs]
                 summary=(identification or {}).get('stellar_resolution',[])
                 unique={r['exposure'] for r in summary if r.get('source_id')==sid and r.get('selected') and r.get('raw_candidates')==1}
@@ -72,31 +74,31 @@ def target_alignment(inputs,paths,options,identification=None,catalogs=None):
     output=paths.file('intermediate','alignment','target_identifications','ecsv')
     Table(rows=measurements).write(output,format='ascii.ecsv',overwrite=True)
     record=dict(status='unvalidated',method='local_centroid_recovery',positions=positions,source_counts=[len(c) for c in catalogs],external_coordinates_used_for_fit=False)
-    if min(map(len,catalogs),default=0)<4:
+    common={sid for c in catalogs for sid in map(str,c['common_source_id'])
+            if sum(sid in set(map(str,other['common_source_id'])) for other in catalogs)>=2}
+    if len(common)<2:
         local_result=single_source_fallback(inputs,catalogs,options,paths)
         record.update(local_result);record['result_state']='local_shift_only' if record.get('status')=='local_only' else 'unvalidated'
         save(paths.file('intermediate','alignment','target_alignment'),record);return record,catalogs
     return _refine_catalogs(inputs,catalogs,paths,options,record)
 
 
-def _refine_catalogs(inputs,catalogs,paths,options,record):
-    from .relative_engine import native_graph_fit,evaluate,internal_mosaic,image_quality,coadd_reference_catalog
-    with paths.scratch('target-alignment-') as tmp:
-        work=Path(tmp);copies=[]
-        for p in inputs:
-            dest=work/p.name;paths.copy(p,dest);copies.append(dest)
-        try:
-            fits_report=native_graph_fit(copies,catalogs,options,'shift')
-            assessed=evaluate(copies,catalogs,options,paths,'target_relative')
-            record.update(validation=assessed,transformations=fits_report)
-            if assessed['may_combine']:
-                before=internal_mosaic(inputs,work/'before');after=internal_mosaic(copies,work/'after',before)
-                a,b=coadd_reference_catalog(inputs,copies,catalogs)
-                qa=image_quality(before,after,a,options,paths,'target_relative',after_catalog=b);record['image_quality']=qa
-                if qa['status']=='validated':
-                    for source,dest in zip(copies,inputs):paths.copy(source,dest)
-                    record.update(status='validated',result_state='validated_refined',may_combine=True,scope='full_field_with_local_recovery')
-        except Exception as exc:record['error']=f'{type(exc).__name__}: {exc}'
+def _refine_catalogs(inputs,catalogs,paths,options,record,previous_joint=None):
+    """Use the standard joint fitter, including partially observed sources.
+
+    Reuse an already evaluated joint proposal for identical input catalogs.
+    A failed image-quality assessment is never bypassed by the fallback.
+    """
+    from .relative_engine import joint_registration
+    try:
+        assessed=previous_joint if previous_joint is not None else joint_registration(inputs,catalogs,options,paths)
+        record.update(validation=assessed,transformations=assessed.get('fits',[]),
+                      image_quality=assessed.get('image_quality'),reused_joint_assessment=previous_joint is not None)
+        if assessed.get('may_combine'):
+            record.update(status='validated',result_state='validated_existing' if not assessed.get('corrections_applied') else 'validated_refined',
+                          may_combine=True,scope=assessed.get('scope','common_source_constrained'))
+        else:record['reason']=assessed.get('reason',assessed.get('status','Joint registration unvalidated'))
+    except Exception as exc:record['error']=f'{type(exc).__name__}: {exc}'
     save(paths.file('intermediate','alignment','target_alignment'),record)
     return record,catalogs
 

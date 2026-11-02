@@ -252,13 +252,19 @@ def generate_report(directory):
             attention.append('<li><strong>'+_escape(k)+':</strong> '+_escape(why)+' '+_escape(action)+'</li>')
     if attention:head+='<h2>Needs attention</h2><ul>'+''.join(attention)+'</ul>'
     if state.get('workflow_error'):head+='<p><strong>Workflow error:</strong> '+_escape(state['workflow_error'])+'</p>'
-    head+='<h2>Filter details</h2><p class="muted">Expand a filter to see its sources, applied offsets and WCS. Full diagnostic tables are inside Technical details.</p>'
+    detail_heading='<h2>Filter details</h2><p class="muted">Expand a filter to see its sources, applied offsets and WCS. Full diagnostic tables are inside Technical details.</p>'
     body=''.join(concise_filter(k,r,contexts.get(k,{}),_summary(k,r,state.get('workflow_error'),contexts.get(k)).replace(' id="filter-'+_escape(k)+'"','')) for k,r in sorted(filters.items()))
     tail='<footer><p class="muted">Offline report from saved pipeline results. Refreshing it does not rerun a reduction. Fit-source scatter is not an independent absolute-accuracy measurement; drizzled noise is correlated.</p></footer></body></html>'
     descriptions={}
     for key,ctx in contexts.items():
         for row in ctx['associations']:
             sid=str(row.get('source_id',''));descriptions[(key,sid)]=key+' — '+_kind(row,filters[key])+' — '+sid+'. Native HST cutouts: green selected; red rejected; orange unresolved. Selection identifies a counterpart; WCS acceptance is shown in the tables above.'
+    try:
+        from .report_alignment import previews
+        comparisons,comparison_count=previews(paths,filters,min(300_000,max(0,LIMIT-len((head+body+tail).encode('utf-8'))-8192))) if not state.get('workflow_error') else ([],0)
+    except ImportError:comparisons,comparison_count=[],0
+    comparison_html=('<section><h2>Before vs after alignment</h2><p class="muted">Open a filter to compare several common sources. Double images should merge into single sources after a successful correction.</p>'+''.join(comparisons)+'</section>') if comparisons else ''
+    body=comparison_html+detail_heading+body
     try:figures=_figures(paths,list(filters),descriptions=descriptions,budget=min(350_000,max(0,LIMIT-len((head+body+tail).encode('utf-8'))-4096)))
     except ImportError:figures=[]
     content=head+body+('<details><summary>Diagnostic previews ('+str(len(figures))+')</summary>'+''.join(figures)+'</details>' if figures else '')+tail
@@ -266,13 +272,14 @@ def generate_report(directory):
         figures.pop();content=head+body+('<details><summary>Diagnostic previews ('+str(len(figures))+')</summary>'+''.join(figures)+'</details>' if figures else '')+tail
     if len(content.encode('utf-8'))>=LIMIT:
         # Essential per-filter status survives even pathological large manifests.
+        comparison_count=0
         body=''.join('<h2>'+_escape(k)+'</h2><p>'+_escape(r.get('status','unknown'))+'</p><p>'+_brief(r.get('error','Inspect saved diagnostic measurements before science use.'),1200)+'</p>' for k,r in sorted(filters.items()))
         content=head+body+tail
     data=content.encode('utf-8')
     if len(data)>=LIMIT:raise ValueError('Report essential text exceeds strict 1 MB limit')
     output=paths.report();output.parent.mkdir(parents=True,exist_ok=True)
     temp=output.with_suffix('.html.tmp');temp.write_bytes(data);os.replace(temp,output)
-    state['report']=dict(path=str(output),bytes=len(data),limit_bytes=LIMIT,self_contained=True,embedded_figures=len(figures),astrometric_details_embedded=True,science_readiness='ready' if ready else 'review_required')
+    state['report']=dict(path=str(output),bytes=len(data),limit_bytes=LIMIT,self_contained=True,embedded_figures=len(figures)+comparison_count,alignment_source_pairs=comparison_count,astrometric_details_embedded=True,science_readiness='ready' if ready else 'review_required')
     save(statefile,state)
     return output
 

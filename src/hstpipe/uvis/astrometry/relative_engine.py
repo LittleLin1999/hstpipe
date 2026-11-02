@@ -99,37 +99,55 @@ def internal_mosaic(inputs,prefix,reference=None):
 
 def image_quality(before,after,reference_catalog,options,paths,label,after_catalog=None,minimum_sources=None):
     """Independent no-CR coadds: source shape, flux and coverage comparisons."""
-    measures=[];cuts=[]
-    detections=[]
+    measures=[];phase_cuts=[]
+    detections=[];source_records=[]
     for phase,(image,cat) in enumerate(zip((before,after),(reference_catalog,reference_catalog if after_catalog is None else after_catalog))):
         widths=[];elong=[];flux=[];indices=[]
         with fits.open(image) as hd:
             h=hd['SCI'];w=WCS(h.header,hd);a=h.data;weight=hd['WHT'].data
             pos=w.all_world2pix(np.column_stack([cat['ra'],cat['dec']]),0)
+            scale=float(np.sqrt(abs(np.linalg.det(w.pixel_scale_matrix)))*3600)
+            phase_records=[];cutouts={}
             for source_index,(x,y) in enumerate(pos):
-                x,y=int(round(x)),int(round(y));r=7
+                extent=float(cat['measurement_extent_arcsec'][source_index]) if 'measurement_extent_arcsec' in cat.colnames else 0.
+                x,y=int(round(x)),int(round(y));r=7+int(np.ceil(extent/scale))
+                detail=dict(source_id=str(cat['source_id'][source_index]) if 'source_id' in cat.colnames else str(source_index),
+                            radius_pix=r,status='insufficient_coverage')
+                phase_records.append(detail)
                 if x<r or y<r or x+r>=a.shape[1] or y+r>=a.shape[0]:continue
                 cut=a[y-r:y+r+1,x-r:x+r+1].astype(float);g=weight[y-r:y+r+1,x-r:x+r+1]>0
                 if not g.all():continue
                 border=np.concatenate([cut[0],cut[-1],cut[:,0],cut[:,-1]]);sky=np.median(border)
                 noise=max(float(1.4826*np.median(abs(border-sky))),1e-12)
                 netflux=float(cut.sum()-sky*cut.size)
+                detail['status']='insufficient_snr'
                 if netflux/(noise*np.sqrt(cut.size))<options.get('qa_min_snr',5.):continue
                 yy,xx=np.indices(cut.shape);rr=(xx-r)**2+(yy-r)**2
                 local_weight=weight[y-r:y+r+1,x-r:x+r+1]
                 outer=float(np.median(local_weight[rr>=5**2]))
+                detail['status']='insufficient_core_coverage'
                 if outer<=0 or np.mean(local_weight[rr<=2.5**2])/outer<options.get('qa_min_core_weight_ratio',.8):continue
                 # Noise clipped to positive values has a broad apparent FWHM.
                 # Only significant emission may support this image-quality test.
-                signal=np.where(cut-sky>2*noise,cut-sky,0);total=signal.sum()
+                support=np.ones(cut.shape,bool)
+                if 'measurement_world' in cat.colnames:
+                    positions=w.all_world2pix(np.asarray(json.loads(str(cat['measurement_world'][source_index]))),0)
+                    support=np.zeros(cut.shape,bool)
+                    for px,py in positions:
+                        support|=(xx-(px-x+r))**2+(yy-(py-y+r))**2<=7**2
+                signal=np.where((cut-sky>2*noise)&support,cut-sky,0);total=signal.sum()
                 if total<=0:continue
                 xc=(xx*signal).sum()/total;yc=(yy*signal).sum()/total
                 width=float(cat['width_pix'][source_index]) if 'width_pix' in cat.colnames else 1.
+                detail['status']='emission_not_centered'
                 if np.hypot(xc-r,yc-r)>(max(1.,width*.5) if phase else r-1):continue
                 cov=np.array([[(signal*(xx-xc)**2).sum(),(signal*(xx-xc)*(yy-yc)).sum()],[(signal*(xx-xc)*(yy-yc)).sum(),(signal*(yy-yc)**2).sum()]])/total
                 ev=np.linalg.eigvalsh(cov);indices.append(source_index)
                 widths.append(float(2.355*np.sqrt(ev.mean())));elong.append(float(np.sqrt(ev[-1]/max(ev[0],1e-9))));flux.append(float(cut.sum()-sky*cut.size))
-                if len(cuts)<12:cuts.append(cut)
+                detail.update(status='measured',fwhm_pix=widths[-1],elongation=elong[-1],flux=flux[-1])
+                cutouts[source_index]=cut
+            phase_cuts.append(cutouts)
+            source_records.append(phase_records)
             detections.append({i:(w,e,f) for i,w,e,f in zip(indices,widths,elong,flux)})
             measures.append(dict(sources=len(widths),fwhm_pix=float(np.median(widths)) if widths else None,elongation=float(np.median(elong)) if elong else None,flux=float(np.median(flux)) if flux else None,covered_pixels=int((weight>0).sum())))
     common=set(detections[0])&set(detections[1])
@@ -140,8 +158,15 @@ def image_quality(before,after,reference_catalog,options,paths,label,after_catal
     passed=min(a['sources'],b['sources'])>=(options['qa_min_sources'] if minimum_sources is None else minimum_sources)
     if passed:passed=(b['fwhm_pix']<=a['fwhm_pix']*options['max_width_ratio'] and b['elongation']<=a['elongation']*options['max_width_ratio'])
     if passed and a['flux'] and b['flux']:passed=b['flux']>=a['flux']*.95
-    if cuts:image_plot(cuts,['No-CR reference cutout']*len(cuts),paths.file('diagnostics','alignment',label+'_coadd_cutouts','png'))
+    cuts=[];labels=[]
+    for i in sorted(common)[:3]:
+        sid=str(reference_catalog['source_id'][i]) if 'source_id' in reference_catalog.colnames else str(i)
+        for phase,name in enumerate(('Before','After')):
+            cuts.append(phase_cuts[phase][i]);labels.append(name+' '+sid)
+    if cuts:image_plot(cuts,labels,paths.file('diagnostics','alignment',label+'_coadd_cutouts','png'))
     return dict(status='validated' if passed else 'image_quality_unvalidated',before=a,after=b,
+        sources_by_phase=dict(before=source_records[0],after=source_records[1]),
+        aperture_policy='Same angular flux aperture enclosing all source positions plus seven output pixels; shape moments use seven-pixel neighborhoods of measured HST positions to exclude unrelated outer pixels',
         no_cr_rejection=True,source_selection='Requires aperture SNR, centered significant emission and adequate EXP core coverage in both coadds',caveat='Cutout moments are not a PSF model; SNR is an approximate pixel-noise diagnostic and does not model drizzle covariance')
 
 
@@ -437,7 +462,7 @@ def refine_relative(inputs,paths,options,identification=None):
                 shutil.rmtree(work)
         if best is None:
             from .target_fallback import target_alignment
-            fallback,local_catalogs=target_alignment(inputs,paths,options,identification=identification,catalogs=identified)
+            fallback,local_catalogs=target_alignment(inputs,paths,options,identification=identification,catalogs=identified,previous_joint=report.get('joint_models'))
             report['local_registration']=fallback
             if fallback.get('may_combine'):
                 report.update(fallback['validation'],method='target_specific',image_quality=fallback.get('image_quality'))
@@ -543,13 +568,25 @@ def coadd_reference_catalog(before_inputs,after_inputs,catalogs):
             if sid not in chosen or float(row['centroid_error_pix'])<chosen[sid][0]:
                 chosen[sid]=(float(row['centroid_error_pix']),i,j)
     before=[];after=[]
+    from astropy.coordinates import SkyCoord
+    import astropy.units as u
     for sid,(_,i,j) in sorted(chosen.items()):
         row=catalogs[i][j];xy=[[float(row['x']),float(row['y'])]];v=int(row['extver'])
         values=[]
-        for image in (before_inputs[i],after_inputs[i]):
-            with fits.open(image) as hd:values.append(detector_wcs(hd,v).all_pix2world(xy,0)[0])
-        before.append(dict(ra=float(values[0][0]),dec=float(values[0][1]),source_id=sid,width_pix=float(row['width_pix'])))
-        after.append(dict(ra=float(values[1][0]),dec=float(values[1][1]),source_id=sid,width_pix=float(row['width_pix'])))
+        extents=[];all_positions=[]
+        for images in (before_inputs,after_inputs):
+            with fits.open(images[i]) as hd:center=detector_wcs(hd,v).all_pix2world(xy,0)[0]
+            values.append(center);positions=[]
+            for image,cat in zip(images,catalogs):
+                with fits.open(image) as hd:
+                    for other in cat[np.asarray(cat['common_source_id']).astype(str)==sid]:
+                        positions.append(detector_wcs(hd,int(other['extver'])).all_pix2world([[float(other['x']),float(other['y'])]],0)[0])
+            all_positions.append(positions)
+            sky=SkyCoord(np.asarray(positions)[:,0]*u.deg,np.asarray(positions)[:,1]*u.deg)
+            extents.append(float(sky.separation(SkyCoord(*center,unit='deg')).arcsec.max()))
+        for output,world,positions in zip((before,after),values,all_positions):
+            output.append(dict(ra=float(world[0]),dec=float(world[1]),source_id=sid,width_pix=float(row['width_pix']),
+                               measurement_extent_arcsec=max(extents),measurement_world=json.dumps(np.asarray(positions).tolist())))
     return Table(rows=before),Table(rows=after)
 
 
@@ -645,9 +682,17 @@ def joint_registration(inputs,catalogs,options,paths):
         result.update(status='unvalidated',reason='Joint model fails unchanged precision, residual or physical bounds');return result
     # Record all native HST measurements and their chip identity; no catalog
     # projected position becomes an observation in the adjustment.
-    measurements=[]
-    for image,c in zip(inputs,catalogs):
-        for row in c:measurements.append(dict(exposure=image.name,source_id=str(row['common_source_id']),extver=int(row['extver']),x=float(row['x']),y=float(row['y']),centroid_error_pix=float(row['centroid_error_pix'])))
+    measurements=[];usage={};offset=0
+    for i,f in enumerate(result['fits']):
+        for sid in f['source_ids']:
+            usage[(i,sid)]=(bool(result['measurement_inlier_mask'][offset]),result['measurement_residuals_pix'][offset]);offset+=1
+    for i,(image,c) in enumerate(zip(inputs,catalogs)):
+        for row in c:
+            sid=str(row['common_source_id']);used,residual=usage.get((i,sid),(False,[None,None]))
+            measurements.append(dict(exposure=image.name,source_id=sid,extver=int(row['extver']),
+                x=float(row['x']),y=float(row['y']),centroid_error_pix=float(row['centroid_error_pix']),
+                fit_inlier=used,residual_x_pix=residual[0],residual_y_pix=residual[1],
+                fit_status='inlier' if used else ('robust_outlier' if (i,sid) in usage else 'not_common')))
     Table(rows=measurements).write(paths.file('intermediate','alignment','joint_measurements','ecsv'),format='ascii.ecsv',overwrite=True)
     with paths.scratch('joint-relative-') as tmp:
         directory=Path(tmp);candidates=[]

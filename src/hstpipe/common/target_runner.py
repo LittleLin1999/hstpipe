@@ -25,11 +25,12 @@ def save(path,data,yaml_format=False):
     os.replace(temp,path)
 
 @contextmanager
-def target_lock(directory):
+def target_lock(directory,group=None):
     import fcntl
     directory.mkdir(parents=True,exist_ok=True)
-    with (directory.parent/'.uvis.lock').open('a') as stream:
-        try:fcntl.flock(stream,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    name='.uvis.lock' if group is None else '.uvis-'+group+'.lock'
+    with (directory.parent/name).open('a') as stream:
+        try:fcntl.flock(stream,fcntl.LOCK_EX | (fcntl.LOCK_NB if group is not None else 0))
         except BlockingIOError:raise RuntimeError(f'Another reduction/migration is writing {directory}')
         try:yield
         finally:fcntl.flock(stream,fcntl.LOCK_UN)
@@ -74,42 +75,43 @@ def run_uvis(config,engine,dry_run=False,_retry_anchors=True,_retry_group=None,_
         if any(paths.directory.glob('*/manifest.json')):raise RuntimeError(f'Legacy UVIS layout at {paths.directory}; run hstpipe uvis migrate first')
         from ..uvis.shallow import migrate_target
         migrate_target(paths.directory)
-        with target_lock(paths.directory):
-            statepath=paths.directory/'manifest.json'
-            state=json.loads(statepath.read_text()) if statepath.exists() else dict(schema_version=2,instrument='uvis',target=target,filters={})
-            state.pop('workflow_error',None)
-            if state.get('schema_version')!=2:raise ValueError('Unknown target manifest schema')
-            cache=paths.cache();key=reduction_key(cache,rows,options)
-            previous=state['filters'].get(paths.group_key,{})
-            if paths.product('drc').exists() and not previous:raise FileExistsError(f'Untracked product would be overwritten: {paths.product("drc")}')
-            if previous.get('status')=='complete' and config.resume and not config.force and not options.get('astrometry',{}).get('catalogs',{}).get('refresh',False) and cache.valid('reduction',key):
-                if paths.directory not in results:results.append(paths.directory)
-                from ..uvis.reporting import generate_report
-                generate_report(paths.directory)
-                continue
-            if previous and not (config.resume or config.force):raise FileExistsError('Existing filter reduction; choose --resume or --force')
-            if config.force and previous:
-                backup=paths.recovery_directory('history-'+paths.group_id+'-'+str(time.time_ns()));backup.mkdir(parents=True)
-                # Archive only this filter/setup. Other filters and shared state remain in place.
-                for artifact in previous.get('artifacts',[]):
-                    p=Path(artifact['path'])
-                    if p.is_file() and p.is_relative_to(paths.directory) and p.parent!=paths.catalog_directory():
-                        dest=backup/p.relative_to(paths.directory);dest.parent.mkdir(parents=True,exist_ok=True);p.rename(dest)
-                save(backup/'manifest.json',previous)
-                for receipt in cache.directory.glob(cache.prefix+'*.json'):
-                    receipt.rename(backup/receipt.name)
-            cfgpath=paths.directory/'config.yaml'
-            stored=yaml.safe_load(cfgpath.read_text()) if cfgpath.exists() else {}
-            shared=config.effective();shared.update(target=target,element=None,setup=None,resume=True,force=False)
-            shared['filter_overrides']=merge(stored.get('filter_overrides',{}),config.filter_overrides)
-            save(cfgpath,shared,True)
-            previous_products=previous.get('products') or previous.get('previous_products',[])
-            # Existing products remain available even when this attempt fails.
-            inputs=[identity(e.path) for e in rows]
-            record=dict(filter=filt,setup=effective.setup,status='running',started_utc=__import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat(),inputs=inputs,configuration=effective.effective(),
-                        previous_products=previous_products,observing_configurations=[e.metadata for e in rows],grouping_decisions=[e.metadata.get('grouping_reason') for e in rows])
-            state['filters'][paths.group_key]=record;save(statepath,state)
-            log=reduction_logger(paths);log.info('Starting UVIS %s',paths.group_key)
+        with target_lock(paths.directory,paths.group_key):
+            with target_lock(paths.directory):
+                statepath=paths.directory/'manifest.json'
+                state=json.loads(statepath.read_text()) if statepath.exists() else dict(schema_version=2,instrument='uvis',target=target,filters={})
+                state.pop('workflow_error',None)
+                if state.get('schema_version')!=2:raise ValueError('Unknown target manifest schema')
+                cache=paths.cache();key=reduction_key(cache,rows,options)
+                previous=state['filters'].get(paths.group_key,{})
+                if paths.product('drc').exists() and not previous:raise FileExistsError(f'Untracked product would be overwritten: {paths.product("drc")}')
+                if previous.get('status')=='complete' and config.resume and not config.force and not options.get('astrometry',{}).get('catalogs',{}).get('refresh',False) and cache.valid('reduction',key):
+                    if paths.directory not in results:results.append(paths.directory)
+                    from ..uvis.reporting import generate_report
+                    generate_report(paths.directory)
+                    continue
+                if previous and not (config.resume or config.force):raise FileExistsError('Existing filter reduction; choose --resume or --force')
+                if config.force and previous:
+                    backup=paths.recovery_directory('history-'+paths.group_id+'-'+str(time.time_ns()));backup.mkdir(parents=True)
+                    # Archive only this filter/setup. Other filters and shared state remain in place.
+                    for artifact in previous.get('artifacts',[]):
+                        p=Path(artifact['path'])
+                        if p.is_file() and p.is_relative_to(paths.directory) and p.parent!=paths.catalog_directory():
+                            dest=backup/p.relative_to(paths.directory);dest.parent.mkdir(parents=True,exist_ok=True);p.rename(dest)
+                    save(backup/'manifest.json',previous)
+                    for receipt in cache.directory.glob(cache.prefix+'*.json'):
+                        receipt.rename(backup/receipt.name)
+                cfgpath=paths.directory/'config.yaml'
+                stored=yaml.safe_load(cfgpath.read_text()) if cfgpath.exists() else {}
+                shared=config.effective();shared.update(target=target,element=None,setup=None,resume=True,force=False)
+                shared['filter_overrides']=merge(stored.get('filter_overrides',{}),config.filter_overrides)
+                save(cfgpath,shared,True)
+                previous_products=previous.get('products') or previous.get('previous_products',[])
+                # Existing products remain available even when this attempt fails.
+                inputs=[identity(e.path) for e in rows]
+                record=dict(filter=filt,setup=effective.setup,status='running',started_utc=__import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat(),inputs=inputs,configuration=effective.effective(),
+                            previous_products=previous_products,observing_configurations=[e.metadata for e in rows],grouping_decisions=[e.metadata.get('grouping_reason') for e in rows])
+                state['filters'][paths.group_key]=record;save(statepath,state)
+                log=reduction_logger(paths);log.info('Starting UVIS %s',paths.group_key)
             try:
                 bad=[e for e in inventory_errors if e['target']==target and e['filter']==filt]
                 if bad:
@@ -123,16 +125,20 @@ def run_uvis(config,engine,dry_run=False,_retry_anchors=True,_retry_group=None,_
                 artifacts=[identity(p) for p in sorted(files) if p.is_file() and p.is_relative_to(paths.directory) and 'logs' not in p.relative_to(paths.directory).parts]
                 record.update(status=('complete' if products else assessment.get('status','incomplete')),versions=versions(),scientific_assessment=assessment,products=[identity(p) for p in products],artifacts=artifacts,
                               intermediate_files=[a for a in artifacts if 'intermediate' in Path(a['path']).relative_to(paths.directory).parts])
-                state['filters'][paths.group_key]=record;save(statepath,state)
+                with target_lock(paths.directory):
+                    state=json.loads(statepath.read_text());state['filters'][paths.group_key]=record;save(statepath,state)
                 if products:cache.record('reduction',reduction_key(cache,rows,options),[Path(a['path']) for a in artifacts])
                 log.info('UVIS %s processing status: %s',paths.group_key,record['status'])
                 if paths.directory not in results:results.append(paths.directory)
             except Exception as exc:
-                record.update(status='failed',error=str(exc));state['filters'][paths.group_key]=record;save(statepath,state);log.exception('UVIS group failed')
+                record.update(status='failed',error=str(exc))
+                with target_lock(paths.directory):
+                    state=json.loads(statepath.read_text());state['filters'][paths.group_key]=record;save(statepath,state)
+                log.exception('UVIS group failed')
                 if paths.directory not in results:results.append(paths.directory)
             finally:
                 from ..uvis.reporting import generate_report
-                generate_report(paths.directory)
+                with target_lock(paths.directory):generate_report(paths.directory)
     if not dry_run and _retry_anchors and astro.get('method')=='two_pass' and astro.get('cross_filter',{}).get('enabled',False):
         # Optical suitability is known only after fitting. Give earlier failed
         # selected filters one chance to use a subsequently validated anchor.

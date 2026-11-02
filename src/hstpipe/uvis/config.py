@@ -1,6 +1,6 @@
 """Validated UVIS stage settings; detector calibration is never rerun."""
 from .astrometry.config import DEFAULTS as ASTROMETRY_DEFAULTS
-DEFAULTS=dict(astrometry=ASTROMETRY_DEFAULTS,background=dict(mode='auto',threshold=2.5,dilate=8,target_radius=3.0,min_blank=0.2,
+DEFAULTS=dict(execution=dict(target_workers=1,filter_workers=1),astrometry=ASTROMETRY_DEFAULTS,background=dict(mode='auto',threshold=2.5,dilate=8,target_radius=3.0,min_blank=0.2,
     min_pixels=1000,significance=3.0,box_size=128,user={},amplifier_correction=False,amplifier_assess=False,dq_ignore_bits=0,source_fills_field=False),
     alignment=dict(mode='auto',minobj=10,max_rms=0.3,max_shift=10.0,fitgeometry='shift',max_sources=1000),
     drizzle=dict(final_scale=0.04,final_pixfrac=1.0,final_kernel='square',final_wht_type='EXP',
@@ -34,6 +34,7 @@ def settings(options):
     import numpy as np
     if bitfield_to_boolean_mask(np.array([4096],dtype='u2'),ignore_flags=out['drizzle']['final_bits'],good_mask_value=True)[0]:
         raise ValueError('final_bits must reject the CR bit 4096')
+    if any(type(out['execution'].get(k)) is not int or not 1<=out['execution'][k]<=16 for k in ('target_workers','filter_workers')):raise ValueError('Worker counts must be integers from 1 to 16')
     astro=out['astrometry']
     if astro['workflow']!='relative_then_absolute':raise ValueError('Supported UVIS workflow is relative_then_absolute')
     ident=astro['source_identification']

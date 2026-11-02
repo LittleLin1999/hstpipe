@@ -265,7 +265,20 @@ def standardize_legacy(raw,quality=None):
     return out
 
 
+_ACTIVE_CACHE_LOCKS=set()
+
 def _cached(catalog,parameters,loader,cache_dir,refresh,offline,allow_offline_load=False):
+    if cache_dir is None or str(Path(cache_dir).resolve()) in _ACTIVE_CACHE_LOCKS:
+        return _cached_unlocked(catalog,parameters,loader,cache_dir,refresh,offline,allow_offline_load)
+    from ...common.target_runner import target_lock
+    # A target's shared cache is small; hold this lock through the request to
+    # avoid duplicate downloads and simultaneous reads of partially written files.
+    with target_lock(Path(cache_dir)):
+        token=str(Path(cache_dir).resolve());_ACTIVE_CACHE_LOCKS.add(token)
+        try:return _cached_unlocked(catalog,parameters,loader,cache_dir,refresh,offline,allow_offline_load)
+        finally:_ACTIVE_CACHE_LOCKS.remove(token)
+
+def _cached_unlocked(catalog,parameters,loader,cache_dir,refresh,offline,allow_offline_load=False):
     query_id=hashlib.sha256(json.dumps(parameters,sort_keys=True,default=str).encode()).hexdigest()[:20]
     if cache_dir is None:
         if offline:raise CatalogOfflineError(f'{catalog}: no cache directory supplied')
@@ -411,5 +424,11 @@ def cached_footprint(catalog,ra,dec,radius,*,cache_dir,quality=None,observation_
     table.meta.update(cache_fallback=True,complete_query_coverage=complete,coverage_caveat='Counts are lower bounds when cached coverage is partial; unavailable objects are not nondetections',
         original_cache_file=str(path),original_query=query,original_cone=cone,requested_cone=[ra,dec,radius],retrieved_utc=metadata.get('retrieved_utc'),endpoint=metadata.get('endpoint'),observation_epoch=observation_epoch)
     ident=hashlib.sha256(json.dumps(dict(source=str(path),query=query,requested=[ra,dec,radius],quality=quality,epoch=observation_epoch,code=hashlib.sha256(Path(__file__).read_bytes()).hexdigest()),sort_keys=True).encode()).hexdigest()[:20]
-    out=directory/f'{catalog}_identification_subset_{ident}.ecsv';table.write(out,format='ascii.ecsv',overwrite=True);table.meta['cache_file']=str(out)
+    out=directory/f'{catalog}_identification_subset_{ident}.ecsv'
+    import tempfile,os
+    fd,name=tempfile.mkstemp(dir=directory,suffix='.ecsv');os.close(fd)
+    temporary=Path(name)
+    try:table.write(temporary,format='ascii.ecsv',overwrite=True);temporary.replace(out)
+    finally:temporary.unlink(missing_ok=True)
+    table.meta['cache_file']=str(out)
     return table

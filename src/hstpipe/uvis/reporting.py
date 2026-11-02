@@ -214,8 +214,8 @@ def _figures(paths,filters,budget=650_000,descriptions=None):
         if group and per_filter[group]>=2:continue
         try:
             with Image.open(p) as original:
-                image=ImageOps.exif_transpose(original).convert('RGB');image.thumbnail((1100,760))
-                stream=io.BytesIO();image.save(stream,format='JPEG',quality=72,optimize=True)
+                image=ImageOps.exif_transpose(original).convert('RGB');image.thumbnail((900,620))
+                stream=io.BytesIO();image.save(stream,format='JPEG',quality=65,optimize=True)
                 data=base64.b64encode(stream.getvalue()).decode('ascii')
         except (OSError,ValueError):continue
         caption=next((desc for (filt,sid),desc in (descriptions or {}).items() if filt==group and sid in p.name),p.name)
@@ -224,7 +224,7 @@ def _figures(paths,filters,budget=650_000,descriptions=None):
         if used+size>budget:continue
         chosen.append(fragment);used+=size
         if group:per_filter[group]+=1
-        if len(chosen)>=8:break
+        if len(chosen)>=3:break
     return chosen
 
 def generate_report(directory):
@@ -239,30 +239,31 @@ def generate_report(directory):
         if not state.get('workflow_error'):contexts[key]=context(group_paths,record)
     ready=bool(filters) and all(r.get('products') and r.get('scientific_assessment',{}).get('status')=='science_ready' for r in filters.values())
     title=state['target']+' UVIS reduction'
-    head='<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>'+_escape(title)+'</title><style>body{font:15px system-ui,sans-serif;max-width:1100px;margin:2em auto;padding:0 1em;color:#182433}table{border-collapse:collapse;width:100%}td,th{padding:.4em;border:1px solid #ccd2d8;text-align:left}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f5f7;padding:1em;font-size:12px}img{max-width:100%;height:auto}section{margin:2em 0}figcaption{overflow-wrap:anywhere;color:#53616d}summary{cursor:pointer}td{overflow-wrap:anywhere;vertical-align:top}th{background:#edf1f6}.scroll{overflow-x:auto;margin:1em 0}.warning{background:#fff3d6;padding:.7em;border-left:4px solid #ba7800}.offset-plot{max-width:640px}.offset-plot svg{width:100%;height:auto}details{margin:1em 0}summary{font-weight:600}</style><body><h1>'+_escape(title)+'</h1>'
-    head+='<p><strong>'+('Science ready' if ready else 'Requires review — science readiness not certified')+'</strong>. Report generated from the target manifest. Catalog identity priors do not constrain the HST-only relative fit.</p>'
-    overview={k:dict(exposures=len(r.get('inputs',[])),exposure_seconds=sum(e.get('EXPTIME',0) or 0 for e in r.get('observing_configurations',[])),started_utc=r.get('started_utc'),versions=r.get('versions',{})) for k,r in filters.items()}
-    overview_rows=[]
-    for key,record in sorted(filters.items()):
-        a=record.get('scientific_assessment',{});r=a.get('relative_astrometry',a.get('alignment',{}));j=r.get('joint_models',{});absolute=a.get('astrometry',{})
-        used_ids={sid for (_,sid),keep in contexts.get(key,{}).get('used',{}).items() if keep is not False}
-        source_count=(str(len(used_ids)) if used_ids else 'Membership not recorded') if r.get('status')=='validated' else 'No accepted solution'
-        overview_rows.append(['<a href="#filter-'+_escape(key)+'">'+_escape(key)+'</a>',str(len(record.get('inputs',[]))),_escape(record.get('started_utc','Not recorded')),source_count,_escape(r.get('status','not_run')),_escape(a.get('stages',{}).get('absolute_alignment',{}).get('status',absolute.get('status','not_run')))])
-    head+='<h2>Astrometry at a glance</h2>'+table(('Filter','Exposures','Last reduction run (UTC)','Distinct objects in accepted assessment','Relative registration','Absolute calibration'),overview_rows)
-    head+='<p>A report refresh does not rerun the reductions. Each filter retains the result and date of its recorded run. Relative registration and absolute calibration have separate acceptance gates.</p>'
-    head+='<details><summary>Exposure times and pipeline versions</summary><pre>'+_brief(overview,12000)+'</pre></details>'
-    if state.get('workflow_error'):head+='<p>Workflow failure: '+_escape(state['workflow_error'])+'</p>'
-    body=''.join(_summary(k,r,state.get('workflow_error'),contexts.get(k)) for k,r in sorted(filters.items()))
-    tail='<p>Offline standalone report. Images are compressed diagnostics; FITS arrays, complete logs and external assets are not embedded. Fit-source residuals are not independent absolute precision. Drizzle introduces correlated noise.</p></body></html>'
+    from .report_decisions import ready as filter_ready,overview_row,concise_filter,decision
+    count=sum(filter_ready(r) for r in filters.values())
+    css="""body{font:16px -apple-system,BlinkMacSystemFont,Segoe UI,system-ui,sans-serif;max-width:1050px;margin:36px auto;padding:0 20px;color:oklch(25% .015 250);background:oklch(99% .005 250)}h1{font-size:1.7rem;line-height:1.25}h2{font-size:1.3rem;margin-top:2rem}h3{font-size:1.1rem}p,li{max-width:74ch;line-height:1.55}a{color:oklch(42% .13 250)}table{border-collapse:collapse;width:100%;font-size:.9rem}td,th{padding:10px 12px;border-bottom:1px solid oklch(87% .01 250);text-align:left;vertical-align:top}th{background:oklch(95% .008 250);font-weight:600}td{overflow-wrap:anywhere}td>a{white-space:nowrap}.scroll{overflow:auto}summary{cursor:pointer;font-weight:600;line-height:1.5}summary:focus-visible,a:focus-visible{outline:2px solid oklch(45% .13 250);outline-offset:3px}details{margin:14px 0}.filter{padding:14px 0;border-top:1px solid oklch(82% .01 250)}.filter>summary{font-size:1.15rem}.technical{background:oklch(96% .005 250);padding:12px}.muted,figcaption{color:oklch(45% .015 250);font-size:.85rem}.pass{color:oklch(38% .09 155)}.attention{color:oklch(42% .12 45)}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.8rem;padding:12px}img{max-width:100%;height:auto}figure{margin:20px 0}.offset-plot{max-width:640px}.offset-plot svg{width:100%;height:auto}code{overflow-wrap:anywhere}@media(max-width:650px){body{margin:20px auto;padding:0 12px}td,th{padding:8px 6px}h1{font-size:1.4rem}}"""
+    head='<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>'+_escape(title)+'</title><style>'+css+'</style><body><h1>'+_escape(title)+'</h1>'
+    head+='<p><strong>'+str(count)+' of '+str(len(filters))+' filters science-ready.</strong> '+('All recorded filters passed.' if ready else 'Use ready filters; the others need attention.')+'</p>'
+    head+='<h2>Results</h2>'+table(('Filter','Science status','Relative alignment','Absolute check','What this means'),[overview_row(k,r) for k,r in sorted(filters.items())])
+    attention=[]
+    for k,r in sorted(filters.items()):
+        if not filter_ready(r):
+            status,why,action=decision(r)
+            attention.append('<li><strong>'+_escape(k)+':</strong> '+_escape(why)+' '+_escape(action)+'</li>')
+    if attention:head+='<h2>Needs attention</h2><ul>'+''.join(attention)+'</ul>'
+    if state.get('workflow_error'):head+='<p><strong>Workflow error:</strong> '+_escape(state['workflow_error'])+'</p>'
+    head+='<h2>Filter details</h2><p class="muted">Expand a filter to see its sources, applied offsets and WCS. Full diagnostic tables are inside Technical details.</p>'
+    body=''.join(concise_filter(k,r,contexts.get(k,{}),_summary(k,r,state.get('workflow_error'),contexts.get(k)).replace(' id="filter-'+_escape(k)+'"','')) for k,r in sorted(filters.items()))
+    tail='<footer><p class="muted">Offline report from saved pipeline results. Refreshing it does not rerun a reduction. Fit-source scatter is not an independent absolute-accuracy measurement; drizzled noise is correlated.</p></footer></body></html>'
     descriptions={}
     for key,ctx in contexts.items():
         for row in ctx['associations']:
             sid=str(row.get('source_id',''));descriptions[(key,sid)]=key+' — '+_kind(row,filters[key])+' — '+sid+'. Native HST cutouts: green selected; red rejected; orange unresolved. Selection identifies a counterpart; WCS acceptance is shown in the tables above.'
-    try:figures=_figures(paths,list(filters),descriptions=descriptions,budget=min(650_000,max(0,LIMIT-len((head+body+tail).encode('utf-8'))-4096)))
+    try:figures=_figures(paths,list(filters),descriptions=descriptions,budget=min(350_000,max(0,LIMIT-len((head+body+tail).encode('utf-8'))-4096)))
     except ImportError:figures=[]
-    content=head+body+''.join(figures)+tail
+    content=head+body+('<details><summary>Diagnostic previews ('+str(len(figures))+')</summary>'+''.join(figures)+'</details>' if figures else '')+tail
     while len(content.encode('utf-8'))>=LIMIT and figures:
-        figures.pop();content=head+body+''.join(figures)+tail
+        figures.pop();content=head+body+('<details><summary>Diagnostic previews ('+str(len(figures))+')</summary>'+''.join(figures)+'</details>' if figures else '')+tail
     if len(content.encode('utf-8'))>=LIMIT:
         # Essential per-filter status survives even pathological large manifests.
         body=''.join('<h2>'+_escape(k)+'</h2><p>'+_escape(r.get('status','unknown'))+'</p><p>'+_brief(r.get('error','Inspect saved diagnostic measurements before science use.'),1200)+'</p>' for k,r in sorted(filters.items()))

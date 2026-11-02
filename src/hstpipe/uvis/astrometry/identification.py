@@ -346,10 +346,11 @@ def identify(inputs,paths,astrometry):
         if r['status']=='confirmed_common' and r['source_id'] not in verified:associations['status'][i]='valid_not_common'
     from .common_sources import build_common,resolve_repeated_counterparts
     catalogs,hst_common,common_report=build_common(inputs,full_catalogs,associations,astrometry['relative'],association_options=options)
-    from .source_recovery import recover_missing
+    from .source_recovery import recover_missing,recovery_figure
     centroid_recovery=recover_missing(inputs,full_catalogs,hst_common,astrometry['relative']['detection'],astrometry['relative'])
     if any(r['status']=='measured_candidate' for r in centroid_recovery):
         catalogs,hst_common,common_report=build_common(inputs,full_catalogs,associations,astrometry['relative'],association_options=options)
+    recovery_figure(inputs,centroid_recovery,paths)
     common_report['centroid_recovery']=centroid_recovery
     repeated_recovery=resolve_repeated_counterparts(inputs,full_catalogs,hst_common,associations,options)
     hst_common.write(paths.file('intermediate','alignment','hst_common_sources','ecsv'),format='ascii.ecsv',overwrite=True)

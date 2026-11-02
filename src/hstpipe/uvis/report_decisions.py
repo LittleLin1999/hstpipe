@@ -61,6 +61,9 @@ def concise_filter(key,record,ctx,technical):
     elif not accepted:out+='The relative solution passed, but exact accepted source membership is not fully recorded.'
     else:out+='Accepted-fit membership is listed separately from identification.'
     out+='</p>'
+    recovered=[r for r in a.get('source_identification',{}).get('hst_association',{}).get('centroid_recovery',[]) if r.get('status')=='measured_candidate' and len(r.get('mask_attempts',[]))>1]
+    if recovered:
+        out+='<p><strong>Flag-aware centroid recovery:</strong> '+esc(', '.join(r['exposure'].removesuffix('_flc.fits') for r in recovered))+'. The original local measurement failed; excluding inherited 4096 pixels recovered a stable centroid with a valid core. Raw pixels and WCS were not changed by recovery. Registration status is assessed separately.</p>'
     rows=[];total=len(record.get('inputs',[]))
     for sid,rs in selected[:6]:
         n=len({r.get('exposure') for r in rs});fit=sum(s==sid and keep is not False for (_,s),keep in used.items())

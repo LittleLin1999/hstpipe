@@ -100,3 +100,43 @@ def test_hst_only_repeat_candidates_do_not_require_external_or_psf_labels(flc):
     assert [len(c) for c in selected]==[2,2,2,1]
     assert not report['HST_guide_used'] and not report['external_positions_used_for_fit']
     assert report['status']=='candidates_established'
+
+@pytest.mark.parametrize('core_bit',[0,4096,8192])
+def test_repeated_primary_source_can_be_recovered_with_recorded_cr_policy(flc,core_bit):
+    from hstpipe.uvis.astrometry.source_recovery import recover_missing
+    inputs,cats,external=example(flc);options=settings({})['astrometry'];opts=options['relative']
+    # One object repeats in three exposures; no second guide in the fourth.
+    cats=[c[:1] if i<3 else c[:0] for i,c in enumerate(cats)]
+    external=external[:3]
+    _,common,_=build_common(inputs,cats,external,opts)
+    with fits.open(inputs[-1],mode='update') as hd:
+        yy,xx=np.indices(hd['SCI',7].shape)
+        hd['SCI',7].data+=200*np.exp(-((xx-20)**2+(yy-20)**2)/3)
+        hd['SCI',7].data[17:20,23:25]+=1800
+        hd['DQ',7].data[17:20,23:25]=4096
+        if core_bit:hd['DQ',7].data[19:22,19:22]=core_bit
+    before=[identity(p) for p in inputs];records=recover_missing(inputs,cats,common,opts['detection'],opts)
+    assert records and records[0]['search_prior']=='existing_WCS_of_repeated_HST_source'
+    if core_bit:
+        assert records[0]['status']!='measured_candidate'
+        assert len(cats[-1])==0
+    else:
+        r=records[0];assert r['status']=='measured_candidate' and r['centroid_ignore_bits']==0
+        assert r['mask_attempts'][0]['status']=='rejected' and r['mask_attempts'][-1]['status']=='measured_candidate'
+        assert abs(r['x']-20)<.1 and abs(r['y']-20)<.1
+        assert r['core_valid_fraction']>=opts['detection']['min_core_valid_fraction']
+        assert r['external_coordinates_used_for_fit'] is False and r['relative_validation_required']
+        assert len(cats[-1])==1 and cats[-1]['centroid_ignore_bits'][0]==0
+    assert [identity(p) for p in inputs]==before
+
+def test_recovery_keeps_valid_source_with_false_inherited_core_flag(flc):
+    from hstpipe.uvis.astrometry.source_recovery import recover_missing
+    inputs,cats,external=example(flc);opts=settings({})['astrometry']['relative']
+    cats=[c[:1] if i<3 else c[:0] for i,c in enumerate(cats)]
+    _,common,_=build_common(inputs,cats,external[:3],opts)
+    with fits.open(inputs[-1],mode='update') as hd:
+        yy,xx=np.indices(hd['SCI',7].shape);hd['SCI',7].data+=200*np.exp(-((xx-20)**2+(yy-20)**2)/3)
+        hd['DQ',7].data[19:22,19:22]=4096
+    records=recover_missing(inputs,cats,common,opts['detection'],opts)
+    r=records[0];assert r['status']=='measured_candidate' and r['centroid_ignore_bits']==4096
+    assert len(r['mask_attempts'])==1 and abs(r['x']-20)<.1

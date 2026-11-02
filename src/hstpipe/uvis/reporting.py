@@ -206,6 +206,7 @@ def _figures(paths,filters,budget=650_000,descriptions=None):
     files=list(paths.area('diagnostics').glob('*.png'))+list(paths.area('diagnostics').glob('*.jpg'))
     def rank(p):
         text=p.name.lower()
+        if 'centroid_recovery' in text:return (-4,0,p.name)
         return (-3 if 'source_validation' in text else (-2 if 'absolute_references' in text else (-1 if 'stellar_association' in text else (0 if any(x in text for x in ('identity','rejected','coadd','relative_sources')) else 1))),
                 0 if any(x in text for x in ('target','weight','coverage')) else 1,p.name)
     chosen=[];used=0;per_filter={k:0 for k in filters}

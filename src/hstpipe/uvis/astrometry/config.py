@@ -25,6 +25,7 @@ DEFAULTS=dict(source_identification=dict(enabled=True,catalogs=['gaia_dr3','lega
     absolute=dict(mode='auto',preferred='gaia_dr3',fallback='legacy_dr10',allow_existing_gaia_wcs=True,require_validated_solution=True,
         fitgeometry='shift',min_matches=1,min_span_fraction=.1,search_radius_arcsec=2,clip_sigma=3,
         match_tolerance_arcsec=.2,require_leave_one_out=True),
-    detection=dict(snr=5,fwhm_pixels=2.5,fwhm_arcsec=.1,max_sources=1000,edge_pixels=3,**QUALITY_DEFAULTS),
+    detection=dict(method='dao',compact_kernel_widths=[3.5,6.],compact_min_snr=10.,compact_max_centroid_change_pix=.5,
+        snr=5,fwhm_pixels=2.5,fwhm_arcsec=.1,max_sources=1000,edge_pixels=3,**QUALITY_DEFAULTS),
     cross_filter=dict(enabled=True,reference_filter='auto',max_epoch_difference_years=.5,common_grid=False),
     tweakback=dict(enabled=True,preserve_original_wcs=True),final_validation=dict(enabled=True))

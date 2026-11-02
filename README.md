@@ -171,13 +171,23 @@ hstpipe uvis reduce --input /path/to/observations/raw/uvis \
   --output /path/to/observations/redux --target YOUR_TARGET --filter F606W --dry-run
 ```
 
-Remove `--dry-run` to process. All selected exposures must form a compatible setup.
-The final image is `redux/{target}/uvis/{filter}/products/{target}_{filter}_drc.fits`.
-For YAML configuration, use `instrument: uvis`, `element: F606W`, and supply
-`options.alignment` / `options.drizzle` mappings for TweakReg / AstroDrizzle.
-For example, `options.drizzle.skysub: false` disables additional sky subtraction.
-Real-data UVIS validation is still required before relying on its photometry or
-astrometry for science.
+Remove `--dry-run` to process. Compatible groups share the target directory;
+filters and any necessary setup identifiers appear in filenames:
+`redux/{target}/uvis/products/{target}_{filter}[_setup]_drc.fits`.
+
+The standard workflow validates relative registration across all available SCI
+extensions, makes a provisional mosaic, obtains validated Gaia/Legacy absolute
+astrometry, propagates it with TweakBack, and drizzles the corrected FLC working
+copies. Unvalidated stages block publication; original FLCs remain unchanged.
+An offline, self-contained report is generated even on failure and is smaller
+than 1,000,000 bytes.
+
+Configure `options.astrometry` and `options.drizzle`; use
+`options.background.mode: none` when no sky subtraction is wanted. The pipeline
+handles AstroDrizzle sky keywords to avoid double subtraction. Final defaults are
+0.04 arcsec/pixel and pixfrac 0.8; provisional/CR reference sampling is separate.
+See [UVIS configuration and scientific limitations](docs/uvis.md), including
+compact-galaxy references and scoped restart behavior.
 
 ## Use from Python
 
@@ -195,9 +205,9 @@ results = reduce_stis("/path/to/observations/configs/stis.yaml")
 
 ## Checks and further documentation
 
-From an activated environment, run `python -m pytest` in the repository. Current
-validation includes 66 passing tests, exact agreement of the two STIS 2D SCI
-arrays with the prior validated reduction, and 1D flux differences below
+Use focused tests for the behavior being changed; ordinary unit tests require no
+network. Historical STIS validation found exact agreement of the two 2D SCI
+arrays with the prior validated reduction and 1D flux differences below
 `6e-16` of peak. This covers the tested dataset, not all possible observations.
 The empirical optimal-profile branch-flux discrepancy remains a known limitation.
 

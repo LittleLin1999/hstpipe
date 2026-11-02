@@ -4,14 +4,17 @@ import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 from astropy.table import Table,vstack
-from astropy.wcs import WCS
 from .wcs import detector_wcs
 from ..fits import image_data
 from astropy.stats import sigma_clipped_stats,sigma_clip
 
 
 def detect_sources(image,options,*,paths=None,label=None,return_all=False):
-    """DAO detections go through the same pixel-level QC as other detectors."""
+    """Detect sources with shared pixel QC; default DAO remains compatible."""
+    method=options.get('method','dao')
+    if method not in ('dao','compact_stable'):raise ValueError(f'Unknown source detection method: {method}')
+    if method == 'compact_stable':
+        return compact_sources(image,options,paths=paths,label=label,return_all=return_all)
     from photutils.detection import DAOStarFinder
     from .centroids import pixel_masks,validate_centroids
     tables=[];contexts={}
@@ -41,8 +44,72 @@ def detect_sources(image,options,*,paths=None,label=None,return_all=False):
         return result
 
 
+def compact_sources(image,options,*,paths=None,label=None,return_all=False):
+    """Compact-object selection independent of external offsets or fit residuals.
+
+    Both existing segmentation measurements must pass native-pixel QC, have
+    adequate S/N, and identify one stable centroid on the same SCI extension.
+    The wider-kernel measurement is retained, never an external catalog position.
+    """
+    from .sources import sources
+    widths=options.get('compact_kernel_widths',[3.5,6.])
+    if len(widths)!=2 or not np.isfinite(np.asarray(widths,float)).all() or not (0<float(widths[0])<float(widths[1])):
+        raise ValueError('Compact selection requires two increasing positive kernel widths')
+    audits=[]
+    for width in widths:
+        _,audit=sources(image,options,extended=True,width=float(width),return_all=True)
+        audits.append(audit)
+    narrow,audit=audits
+    radius=float(options.get('compact_max_centroid_change_pix',options.get('stability_floor_pix',.5)))
+    min_snr=float(options.get('compact_min_snr',10.))
+    if not np.isfinite(radius+min_snr) or radius<=0 or min_snr<=0:
+        raise ValueError('Compact centroid stability and S/N criteria must be positive and finite')
+    audit['quality_flags']=np.asarray(audit['quality_flags']).astype('U1024')
+    audit['rejection_reason']=np.asarray(audit['rejection_reason']).astype('U128')
+    audit['centroid_status']=np.asarray(audit['centroid_status']).astype('U16')
+    audit['compact_kernel_change_pix']=np.full(len(audit),np.nan)
+    eligible=np.asarray(audit['selected_for_astrometry'],bool).copy()
+    selected=np.zeros(len(audit),bool)
+    audit['source_selection_status']=np.full(len(audit),'rejected',dtype='U16')
+    for i,row in enumerate(audit):
+        if not eligible[i] or not bool(row['centroid_valid']):continue
+        candidates=np.flatnonzero((narrow['extver']==row['extver']) &
+            (np.hypot(narrow['x']-row['x'],narrow['y']-row['y'])<=radius))
+        reason=''
+        if len(candidates)!=1:reason='compact_kernel_missing_or_ambiguous'
+        else:
+            j=candidates[0];other=narrow[j]
+            reverse=np.flatnonzero((audit['extver']==other['extver']) &
+                (np.hypot(audit['x']-other['x'],audit['y']-other['y'])<=radius))
+            audit['compact_kernel_change_pix'][i]=float(np.hypot(row['x']-other['x'],row['y']-other['y']))
+            if len(reverse)!=1:reason='compact_kernel_ambiguous'
+            elif not bool(other['centroid_valid']) or not bool(other['selected_for_astrometry']):reason='compact_other_kernel_quality_failed'
+            elif not np.isfinite(float(row['snr'])+float(other['snr'])) or min(float(row['snr']),float(other['snr']))<min_snr:
+                reason='compact_low_hst_snr'
+        if reason:
+            audit['quality_flags'][i]=';'.join(filter(None,[str(row['quality_flags']),reason]))
+            audit['rejection_reason'][i]=reason
+        else:
+            selected[i]=True
+            audit['source_selection_status'][i]='accepted'
+    audit['selected_for_astrometry']=selected
+    summary=dict(method='compact_stable',kernel_widths=list(widths),max_centroid_change_pix=radius,min_hst_snr=min_snr,
+        detected=len(audit),pixel_quality_accepted=int(np.count_nonzero(audit['centroid_valid'])),preselection_accepted=int(eligible.sum()),
+        accepted=int(selected.sum()),rejected=int((~selected).sum()),external_positions_used=False)
+    audit.meta['compact_selection']=summary
+    accepted=audit[selected]
+    if paths:
+        paths.area('intermediate','alignment',create=True)
+        label=label or 'compact_sources'
+        for suffix,table in [('narrow',narrow),('quality',audit)]:
+            table.write(paths.file('intermediate','alignment',label+'_compact_'+suffix,'ecsv'),format='ascii.ecsv',overwrite=True)
+        accepted.meta['compact_selection_file']=str(paths.file('intermediate','alignment',label+'_compact_quality','ecsv'))
+    return (accepted,audit) if return_all else accepted
+
+
 
 def matches(sources,reference,options):
+    """Compatibility relative-sky matcher; absolute fitting uses absolute_matching."""
     names=['source_index','reference_index','x','y','ra','dec','ref_ra','ref_dec','dx_arcsec','dy_arcsec','accepted']
     if not len(sources) or not len(reference):return Table(names=names,dtype=['i8','i8']+['f8']*8+['bool'])
     sky=SkyCoord(np.asarray(sources['ra'])*u.deg,np.asarray(sources['dec'])*u.deg)
@@ -65,6 +132,7 @@ def matches(sources,reference,options):
 
 
 def validate(sources,reference,options,shape=None):
+    """Compatibility relative-sky validation; not the absolute acceptance gate."""
     table=matches(sources,reference,options);kept=table[table['accepted']]
     result=dict(status='insufficient_matches',matched=len(kept),rejected=len(table)-len(kept),detected=len(sources),reference_count=len(reference),
                 thresholds=dict(options),source_quality=sources.meta.get('centroid_quality'),rms_arcsec=None,robust_scatter_arcsec=None,offset_arcsec=None,uncertainty_arcsec=None)

@@ -34,13 +34,13 @@ def test_competing_repeated_objects_are_not_selected_by_brightness():
     assert all(r['status']=='ambiguous_stellar_profiles' and not r.get('psf_selected') for r in group)
 
 def test_ready_report_keeps_single_source_pair_limit_visible():
-    from hstpipe.uvis.report_decisions import decision
+    from hstpipe.uvis.reporting.decisions import decision
     record=dict(products=[{'path':'final.fits'}],scientific_assessment=dict(status='science_ready',alignment=dict(status='validated',pairs=[dict(validation_scope='local_shift_only')])) )
     state,why,action=decision(record)
     assert state=='Ready with sparse-source limits' and 'not independently validated' in why
 
 def test_blocked_report_names_exposure_without_common_centroid():
-    from hstpipe.uvis.report_decisions import decision
+    from hstpipe.uvis.reporting.decisions import decision
     record=dict(scientific_assessment=dict(alignment=dict(status='unvalidated',original=dict(pairs=[dict(exposure='missing_flc.fits',matched=0)]))))
     state,why,action=decision(record)
     assert state=='Blocked' and 'missing' in why and 'No reliable common centroid' in why

@@ -38,7 +38,7 @@ def test_rejected_observation_is_excluded_equally_before_and_after():
 
 
 def test_report_exposes_same_pair_improvement_and_criterion():
- from hstpipe.uvis.report_astrometry import transformations
+ from hstpipe.uvis.reporting.astrometry import transformations
  q=dict(status='measured',before_rms_pix=.2684,after_rms_pix=.2026,improvement_pix=.0658,exposure_pairs=6,matched_pair_measurements=28,basis='Identical measured source pairs')
  ctx=dict(relative=dict(status='validated',method='existing_wcs'),joint=dict(fits=[],paired_comparison=q,required_improvement_pix=.1))
  # An empty proposal is not a real fit; provide a reference record for rendering.

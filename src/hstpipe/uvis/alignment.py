@@ -1,6 +1,6 @@
 """TweakReg candidate fits are accepted only after measured quality checks."""
 from pathlib import Path
-import json,shutil,tempfile,os
+import shutil,os
 import numpy as np
 from astropy.io import fits
 
@@ -18,9 +18,9 @@ def acceptable_fit(nmatch,xrms,yrms,dx,dy,options):
             and np.hypot(dx,dy)<=options['max_shift'])
 
 def register(inputs,directory,diagnostics,options,*,paths=None):
-    from photutils.detection import DAOStarFinder
-    from astropy.stats import sigma_clipped_stats
     from .qa import image_plot
+    # Compatibility/manual-initialization adapter. The standard pipeline uses
+    # astrometry.relative_engine.refine_relative for mandatory acceptance.
     report=dict(status='original_wcs',reference=str(inputs[0]),fits=[],warnings=[])
     mode=options['mode']
     if mode=='original' or len(inputs)==1:

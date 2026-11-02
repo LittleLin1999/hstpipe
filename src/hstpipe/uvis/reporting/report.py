@@ -2,8 +2,8 @@
 from __future__ import annotations
 import base64,html,io,json,os
 from pathlib import Path
-from ..common.paths import ReductionPaths
-from ..common.target_runner import save
+from ...common.paths import ReductionPaths
+from ...common.target_runner import save
 
 LIMIT=1_000_000
 STAGES=('source_detection','source_identification','relative_alignment','target_specific_alignment',
@@ -188,7 +188,7 @@ def _summary(key,record,workflow_error=None,astrometry_context=None):
     content+='<p>Processing state: <code>'+_escape(record.get('status','unknown'))+'</code>. Last reduction run: '+_escape(record.get('started_utc','not recorded'))+'.</p>'
     content+='<table><thead><tr><th>Stage</th><th>Status</th><th>Reason</th></tr></thead><tbody>'+''.join(rows)+'</tbody></table>'
     if astrometry_context is not None:
-        from .report_astrometry import render
+        from .astrometry import render
         content+=render(astrometry_context,record)
     content+=_spatial_summary(record)
     content+=_absolute_summary(record)
@@ -233,14 +233,14 @@ def generate_report(directory):
     state=json.loads(statefile.read_text())
     paths=ReductionPaths(directory.parent.parent,state['target'],'uvis','report')
     filters=state.get('filters',{})
-    from .report_astrometry import context,table,_kind
+    from .astrometry import context,table,_kind
     contexts={}
     for key,record in filters.items():
         group_paths=ReductionPaths(directory.parent.parent,state['target'],'uvis',record.get('filter',key),record.get('setup'))
         if not state.get('workflow_error'):contexts[key]=context(group_paths,record)
     ready=bool(filters) and all(r.get('products') and r.get('scientific_assessment',{}).get('status')=='science_ready' for r in filters.values())
     title=state['target']+' UVIS reduction'
-    from .report_decisions import ready as filter_ready,overview_row,concise_filter,decision
+    from .decisions import ready as filter_ready,overview_row,concise_filter,decision
     count=sum(filter_ready(r) for r in filters.values())
     css="""body{font:16px -apple-system,BlinkMacSystemFont,Segoe UI,system-ui,sans-serif;max-width:1050px;margin:36px auto;padding:0 20px;color:oklch(25% .015 250);background:oklch(99% .005 250)}h1{font-size:1.7rem;line-height:1.25}h2{font-size:1.3rem;margin-top:2rem}h3{font-size:1.1rem}p,li{max-width:74ch;line-height:1.55}a{color:oklch(42% .13 250)}table{border-collapse:collapse;width:100%;font-size:.9rem}td,th{padding:10px 12px;border-bottom:1px solid oklch(87% .01 250);text-align:left;vertical-align:top}th{background:oklch(95% .008 250);font-weight:600}td{overflow-wrap:anywhere}td>a{white-space:nowrap}.scroll{overflow:auto}summary{cursor:pointer;font-weight:600;line-height:1.5}summary:focus-visible,a:focus-visible{outline:2px solid oklch(45% .13 250);outline-offset:3px}details{margin:14px 0}.filter{padding:14px 0;border-top:1px solid oklch(82% .01 250)}.filter>summary{font-size:1.15rem}.technical{background:oklch(96% .005 250);padding:12px}.muted,figcaption{color:oklch(45% .015 250);font-size:.85rem}.pass{color:oklch(38% .09 155)}.attention{color:oklch(42% .12 45)}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.8rem;padding:12px}img{max-width:100%;height:auto}figure{margin:20px 0}.offset-plot{max-width:640px}.offset-plot svg{width:100%;height:auto}code{overflow-wrap:anywhere}@media(max-width:650px){body{margin:20px auto;padding:0 12px}td,th{padding:8px 6px}h1{font-size:1.4rem}}"""
     head='<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>'+_escape(title)+'</title><style>'+css+'</style><body><h1>'+_escape(title)+'</h1>'
@@ -261,7 +261,7 @@ def generate_report(directory):
         for row in ctx['associations']:
             sid=str(row.get('source_id',''));descriptions[(key,sid)]=key+' — '+_kind(row,filters[key])+' — '+sid+'. Native HST cutouts: green selected; red rejected; orange unresolved. Selection identifies a counterpart; WCS acceptance is shown in the tables above.'
     try:
-        from .report_alignment import previews
+        from .alignment import previews
         comparisons,comparison_count=previews(paths,filters,min(300_000,max(0,LIMIT-len((head+body+tail).encode('utf-8'))-8192))) if not state.get('workflow_error') else ([],0)
     except ImportError:comparisons,comparison_count=[],0
     comparison_html=('<section><h2>Before vs after alignment</h2><p class="muted">Open a filter to inspect each exposure separately. After alignment, each source should lie on the same cyan reference cross.</p>'+''.join(comparisons)+'</section>') if comparisons else ''

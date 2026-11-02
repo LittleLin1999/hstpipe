@@ -258,8 +258,17 @@ def standardize_legacy(raw,quality=None):
     out['ref_cat']=np.asarray(selected['ref_cat']).astype(str) if 'ref_cat' in selected.colnames else np.full(len(selected),'unknown')
     for key in LEGACY_REQUIRED+LEGACY_OPTIONAL:
         if key in selected.colnames and key not in out.colnames:out[key]=selected[key]
-    isolated=_isolated(ra[good],dec[good],quality.get('isolation_arcsec',1.5));out=out[isolated]
-    out.meta.update(raw_count=len(raw),quality_rejected=int((~good).sum()),isolation_rejected=int((~isolated).sum()),quality_cuts=quality,
+    # Optional astrometric precision selection, independent of flux S/N.
+    # Keep missing/nonfinite uncertainties out when this criterion is requested.
+    precision_limit=quality.get('max_position_error_mas')
+    if precision_limit is not None:
+        if not np.isfinite(precision_limit) or precision_limit<=0:raise ValueError('Positive finite position-error limit required')
+        error=np.hypot(np.asarray(out['ra_error_mas'],float),np.asarray(out['dec_error_mas'],float))
+        precise=np.isfinite(error)&(error>0)&(error<=precision_limit)
+    else:precise=np.ones(len(out),bool)
+    isolated=_isolated(ra[good],dec[good],quality.get('isolation_arcsec',1.5))
+    precision_rejected=int((~precise).sum());out=out[isolated&precise]
+    out.meta.update(raw_count=len(raw),quality_rejected=int((~good).sum()),isolation_rejected=int((~isolated).sum()),position_error_rejected=precision_rejected,quality_cuts=quality,
         coverage_source_count=int(np.count_nonzero(np.any(coverage,axis=0))) if coverage else None,
         observation_epoch=None,epoch_caveat='Tractor centroid epochs unavailable here; DR9-North is not newly reprocessed DR10; allow systematic/epoch uncertainty')
     return out

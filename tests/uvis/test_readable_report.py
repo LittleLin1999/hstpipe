@@ -2,7 +2,7 @@ import json
 from hstpipe.common.paths import ReductionPaths
 from hstpipe.common.target_runner import save
 from hstpipe.uvis.reporting import generate_report
-from hstpipe.uvis.report_decisions import decision
+from hstpipe.uvis.reporting.decisions import decision
 
 
 def test_report_is_a_brief_partial_success_summary_with_closed_details(tmp_path):

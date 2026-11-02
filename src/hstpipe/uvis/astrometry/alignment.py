@@ -1,13 +1,10 @@
 """Absolute correction through TweakReg, validated before committing WCS updates."""
-import json,os,tempfile
+import json,os
 from pathlib import Path
 import numpy as np
 from astropy.io import fits
-from astropy.table import Table
 from astropy.wcs import WCS
 from .matching import science_header,science_shape
-from ...common.cache import StageCache
-from ...common.provenance import identity
 from ...common.target_runner import save,merge
 from .catalogs import query_gaia_dr3,query_legacy_dr10,query_footprint,CatalogQueryError,CatalogSchemaError,legacy_at_epoch,cached_footprint
 from .matching import detect_sources

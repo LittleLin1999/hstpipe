@@ -5,7 +5,11 @@ from ..common.provenance import versions
 from .amplifiers import reference_path
 
 def code_inputs():
-    return sorted(Path(__file__).parent.rglob('*.py'))
+    # Presentation changes regenerate the report on a normal cache hit. They
+    # must not invalidate scientific reduction receipts by themselves.
+    return sorted(p for p in Path(__file__).parent.rglob('*.py')
+                  if 'reporting' not in p.relative_to(Path(__file__).parent).parts
+                  and p.name!='reporting.py' and not p.name.startswith('report_') and not p.name.startswith('._'))
 
 def references(options,rows):
     refs=[]

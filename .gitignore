@@ -7,3 +7,9 @@ build/
 dist/
 raw/
 redux/
+
+# macOS metadata and editor swap files
+.DS_Store
+._*
+*.swp
+*.swo

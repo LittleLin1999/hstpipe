@@ -1,5 +1,10 @@
 # UVIS direct-catalog validation on Erebus
 
+> Historical run record. Counts, paths, thresholds and target outcomes below
+> describe those runs, not current defaults or current science-readiness status.
+> Use [the UVIS guide](uvis.md) for current policy and each target manifest/report
+> for its latest measured outcome. This evidence is retained for reproducibility.
+
 Validation performed 2026-10-31 with Python 3.11.7, DrizzlePac 3.11.0,
 STWCS 1.7.7, Astropy 8.0.2, Astroquery 0.4.11 and pyvo 1.9.1.
 

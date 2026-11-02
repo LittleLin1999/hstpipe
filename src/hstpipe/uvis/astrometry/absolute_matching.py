@@ -6,7 +6,6 @@ from astropy.io import fits
 from astropy.table import Table
 from astropy.wcs import WCS
 from astropy.stats import mad_std
-from .matching import detect_sources
 
 def reference_audit(image,sources,reference,options):
     """Audit every eligible row, including cone objects outside actual coverage."""
@@ -124,7 +123,7 @@ def validate_absolute(sources,reference,options,shape=None):
     result=dict(status='insufficient_verified_references',matched=len(kept),fit_inliers=len(kept),initial_associations=len(table),
                 verified_associations=len(kept),independent_validation_sources=0,rejected=len(table)-len(kept),detected=len(sources),reference_count=len(reference),
                 all_associations_initial_rms_arcsec=float(np.sqrt(np.mean(np.asarray(table['dx_arcsec'])**2+np.asarray(table['dy_arcsec'])**2))) if len(table) else None,
-                thresholds=dict(options),source_quality=sources.meta.get('centroid_quality'),rms_arcsec=None,robust_scatter_arcsec=None,offset_arcsec=None,uncertainty_arcsec=None)
+                thresholds=dict(options),source_quality=sources.meta.get('centroid_quality'),source_selection=sources.meta.get('compact_selection'),rms_arcsec=None,robust_scatter_arcsec=None,offset_arcsec=None,uncertainty_arcsec=None)
     if not len(kept):return result,table
     from tweakwcs.linearfit import iter_linear_fit
     offsets=np.column_stack([kept['dx_arcsec'],kept['dy_arcsec']]);error=np.asarray(kept['positional_error_arcsec'])

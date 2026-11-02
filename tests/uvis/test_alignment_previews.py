@@ -7,7 +7,7 @@ from hstpipe.common.paths import ReductionPaths
 from hstpipe.common.provenance import identity
 from hstpipe.common.target_runner import save
 from hstpipe.uvis.reporting import generate_report
-from hstpipe.uvis.report_alignment import exposure_cutouts
+from hstpipe.uvis.reporting.alignment import exposure_cutouts
 
 
 def dataset(flc,tmp_path):

@@ -5,9 +5,9 @@ import io
 import json
 from pathlib import Path
 import numpy as np
-from ..common.paths import ReductionPaths
-from ..common.provenance import identity
-from ..common.target_runner import save
+from ...common.paths import ReductionPaths
+from ...common.provenance import identity
+from ...common.target_runner import save
 
 
 def _tangent(ra,dec):
@@ -20,7 +20,7 @@ def _tangent(ra,dec):
 def _panel(path,row,world,frame,halfwidth):
     """Project native pixel cell boundaries, not interpolated detector data."""
     from astropy.io import fits
-    from .astrometry.wcs import detector_wcs
+    from ..astrometry.wcs import detector_wcs
     with fits.open(path) as hd:
         version=int(row['extver']);h=hd['SCI',version];w=detector_wcs(hd,version)
         predicted=w.all_world2pix([world],0)[0]
@@ -44,7 +44,7 @@ def exposure_cutouts(paths,record):
     """Read saved FLCs/catalogs only; validate their checkpoint before plotting."""
     from astropy.io import fits
     from astropy.table import Table
-    from .astrometry.wcs import detector_wcs
+    from ..astrometry.wcs import detector_wcs
     a=record.get('scientific_assessment',{});rel=a.get('relative_astrometry',a.get('alignment',{}))
     entries=rel.get('detector_catalogs',[])
     raw={Path(i['path']).name:Path(i['path']) for i in record.get('inputs',[])}

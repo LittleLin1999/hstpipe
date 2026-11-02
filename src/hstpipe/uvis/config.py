@@ -36,6 +36,16 @@ def settings(options):
         raise ValueError('final_bits must reject the CR bit 4096')
     if any(type(out['execution'].get(k)) is not int or not 1<=out['execution'][k]<=16 for k in ('target_workers','filter_workers')):raise ValueError('Worker counts must be integers from 1 to 16')
     astro=out['astrometry']
+    detection=astro['detection']
+    if detection.get('method','dao') not in ('dao','compact_stable'):raise ValueError('Unknown absolute source detection method')
+    if detection.get('method')=='compact_stable':
+        widths=np.asarray(detection['compact_kernel_widths'],float)
+        if widths.shape!=(2,) or not np.isfinite(widths).all() or not 0<widths[0]<widths[1]:raise ValueError('Compact kernels must be finite, positive and increasing')
+        for name in ('compact_min_snr','compact_max_centroid_change_pix'):
+            value=detection[name]
+            if not np.isfinite(value) or value<=0:raise ValueError(f'{name} must be positive and finite')
+    error_limit=astro['catalogs']['legacy_dr10']['quality'].get('max_position_error_mas')
+    if error_limit is not None and (not np.isfinite(error_limit) or error_limit<=0):raise ValueError('Legacy position-error limit must be positive and finite')
     if astro['workflow']!='relative_then_absolute':raise ValueError('Supported UVIS workflow is relative_then_absolute')
     ident=astro['source_identification']
     if ident['use_external_positions_for_relative_fit']:raise ValueError('External source identities may guide associations, never relative-fit coordinates')

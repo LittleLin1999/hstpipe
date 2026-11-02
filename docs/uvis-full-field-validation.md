@@ -1,5 +1,10 @@
 # UVIS full-field registration implementation and J1025 regression
 
+> Historical run record. Counts, paths, thresholds and target outcomes below
+> describe those runs, not current defaults or current science-readiness status.
+> Use [the UVIS guide](uvis.md) for current policy and each target manifest/report
+> for its latest measured outcome. This evidence is retained for reproducibility.
+
 Implemented in the existing editable package on Erebus:
 `/quasar/linxiaojing/lrd-squared/codes/hstpipe`.
 The final focused real-data run used the standard pipeline and finished with

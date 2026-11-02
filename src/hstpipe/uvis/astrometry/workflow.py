@@ -1,12 +1,11 @@
 """Validated provisional WCS -> official TweakBack -> new detector-frame drizzle."""
-import json,tempfile
+import json
 from pathlib import Path
 import numpy as np
 from astropy.io import fits
 from astropy.table import Table
 from astropy.wcs import WCS
 from .matching import science_header,science_shape
-from ...common.cache import StageCache
 from ...common.provenance import identity,versions
 from ...common.target_runner import save
 from ..drizzle import drizzle,annotate_product,apply_cr_masks
@@ -71,7 +70,7 @@ def tweakback_inputs(provisional,relative_inputs,working_inputs,solution,paths,o
 def validate_relative_transfer(relative_inputs,working_inputs,relative,options,paths):
     """Recheck fixed internal source pairs after TweakBack, without external fits."""
     from .sources import sources,project
-    from .relative_fit import match,catalog_match,quality
+    from .relative_fit import catalog_match,quality
     if len(working_inputs)==1:
         return dict(status='single_exposure',pairs=[],external_catalog_used=False)
     entries={r['exposure']:r['path'] for r in relative.get('detector_catalogs',[])}

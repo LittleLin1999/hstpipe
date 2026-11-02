@@ -1,10 +1,9 @@
 """Reproducible UVIS stages, with immutable upstream stage checkpoints."""
-import json,shutil,os,tempfile
+import json,shutil,os
 from pathlib import Path
 from astropy.io import fits
 import numpy as np
 from ..common.runner import run
-from ..common.cache import StageCache
 from ..common.provenance import identity,versions
 from .config import settings
 from .qa import inspect_flc,validate_drizzle,cr_report,final_report
@@ -43,7 +42,6 @@ def _engine(config,paths,exposures,*,prepare_only=False):
     report['sampling']=dict(final_scale=opts['drizzle']['final_scale'],final_pixfrac=opts['drizzle']['final_pixfrac'],driz_sep_pixfrac=opts['drizzle']['driz_sep_pixfrac'],nimages=len(rows),commanded_offsets={e.metadata['ROOTNAME']:[e.metadata.get('POSTARG1'),e.metadata.get('POSTARG2')] for e in rows},rationale='Configured final sampling; evaluate dither coverage and source-core weights. Separate-drizzle CR reference pixfrac is recorded independently.')
     background=paths.area('intermediate','background',create=True)
     alignment=paths.area('intermediate','alignment')
-    work=paths.area('intermediate','drizzle')
     diagnostics=paths.area('diagnostics','drizzle')
     cache=paths.cache()
     copies=[paths.exposure_file('intermediate','alignment',e.metadata['ROOTNAME'],'flc') for e in rows]
@@ -53,7 +51,7 @@ def _engine(config,paths,exposures,*,prepare_only=False):
             skyfiles.append(paths.exposure_file('intermediate','background',e.metadata['ROOTNAME'],kind))
         amp=paths.exposure_file('intermediate','background',e.metadata['ROOTNAME'],'amp')
         if amp.exists():skyfiles.append(amp)
-    background_key,alignment_key,_=stage_keys(cache,rows,opts,copies)
+    background_key,_,_=stage_keys(cache,rows,opts,copies)
     bg_summary=paths.file('intermediate','background','background')
     alignment_summary=paths.file('intermediate','alignment','alignment')
     registration=paths.file('intermediate','alignment','registration','ecsv')
@@ -88,8 +86,6 @@ def _engine(config,paths,exposures,*,prepare_only=False):
         if two_pass:
             from .astrometry.relative import inspect_wcs
             report['input_wcs_solutions']=inspect_wcs(copies)
-        relative_options=dict(opts['alignment'])
-        if two_pass:relative_options['mode']=opts['astrometry']['relative']['mode'] if opts['astrometry']['relative']['refine_if_needed'] else 'original'
         if opts['alignment']['mode']=='external':raise ValueError('External catalogs cannot initialize FLC-relative registration; use the absolute stage after provisional drizzle')
         if opts['alignment']['mode']=='user':
             report['requested_alignment']=register(copies,alignment,paths.area('diagnostics','alignment'),opts['alignment'],paths=paths)
@@ -116,15 +112,10 @@ def _engine(config,paths,exposures,*,prepare_only=False):
     provisional=paths.file('intermediate','drizzle','provisional','fits')
     provisional_inputs=paths.file('intermediate','drizzle','provisional_inputs')
     if two_pass:
-        from .astrometry.relative import validate_relative,inspect_wcs
+        from .astrometry.relative import inspect_wcs
         from .astrometry.workflow import finalize
         report['input_wcs_solutions']=inspect_wcs(copies)
         relative=report['alignment']
-        if not relative['may_combine']:
-            report.update(status='astrometry_unvalidated',relative_astrometry=relative,
-                          astrometry=dict(status='unvalidated',reason='Mandatory relative registration could not be established'))
-            write_json(paths.file('diagnostics','drizzle','qa_summary'),report)
-            return []
         provisional_key=cache.key(copies+[Path(__file__).parent/'drizzle.py'],dict(cr=cr_options,provisional=opts['astrometry']['provisional'],versions=versions()))
         def finish_two_pass():
             expected=json.loads(provisional_inputs.read_text())

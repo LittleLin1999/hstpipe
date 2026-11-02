@@ -120,16 +120,16 @@ astrometry:
 ```
 
 `validate: false` is rejected. `mode: original` retains existing WCS but still
-requires measurement; it cannot authorize an unvalidated combination. Existing
-explicit user/external transformations can initialize the working copies and
-must pass the same subsequent validation. Old adapter settings remain readable;
+requires measurement; it cannot authorize an unvalidated combination. Explicit user transformations can initialize working copies and must pass
+the same subsequent validation. Direct external-catalog fitting is reserved for
+the absolute stage after provisional drizzle. Old adapter settings remain readable;
 the new relative policy uses the `astrometry.relative` precision settings.
 
 ## Outputs, caching and limitations
 
 Per-filter/setup alignment summaries and source/match tables are under
 `intermediate/alignment/`; source overlays, residual plots and no-CR shape
-comparisons are under `diagnostics/alignment/`. Rejected native shifts, reference
+comparisons are under flat `diagnostics/`, with alignment-prefixed filenames. Rejected native shifts, reference
 WCS files and fit logs are retained. The target manifest records all strategies,
 accepted/rejected alternatives, source counts and uncertainties. Temporary full
 frame copies are removed after candidate assessment. No filter directories are
@@ -149,7 +149,10 @@ independent sources may remain unresolved even when native fitting runs.
 Gaussian/moment centroid errors and coadd moments are approximate diagnostics;
 no advanced PSF model or science photometry validation is implied.
 
-## J1025+1402 regression outcome
+## Historical J1025+1402 regression outcome
+
+This section preserves an earlier run, not the current target status. Consult
+the target manifest/report for subsequent reductions.
 
 The pre-change code was rerun first on both filters. Neither obtained an accepted
 absolute solution. The integrated relative-stage trials subsequently evaluated

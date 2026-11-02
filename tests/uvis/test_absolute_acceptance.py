@@ -72,7 +72,7 @@ def test_native_stsci_two_reference_fit_and_wcs_preservation(flc,tmp_path,monkey
     assert solution['original_wcs_key'] and solution['transformations']
 
 def test_absolute_report_distinguishes_failure_categories():
-    from hstpipe.uvis.reporting import _absolute_summary
+    from hstpipe.uvis.reporting.report import _absolute_summary
     statuses=['insufficient_verified_references','software_match_count_restriction','ambiguous_associations','excessive_postfit_residuals','external_catalog_unavailable','validated']
     record={'scientific_assessment':{'astrometry':{'attempts':[dict(reference='gaia_dr3',status=s) for s in statuses]}}}
     output=_absolute_summary(record)

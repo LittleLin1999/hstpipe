@@ -3,11 +3,11 @@
 The default workflow uses calibrated, CTE-corrected individual FLC exposures:
 
 1. Validate FLC calibration, SCI/ERR/DQ, geometry, photometry, and distortion WCS.
-2. Preserve/inspect primary, alternate and headerlet WCS solutions; register and
+2. Assess per-chip background and DQ; estimate reliable backgrounds once on
+   working copies. Preserve/inspect primary, alternate and headerlet WCS solutions; register and
    validate relative exposure alignment using the mandatory multi-strategy stage.
    Unresolved registration in any multi-exposure group blocks science combination.
-3. Estimate source-masked backgrounds once on working copies. Use official
-   AstroDrizzle separate drizzle, median, blot and CR masks to make a provisional
+3. Use official AstroDrizzle separate drizzle, median, blot and CR masks to make a provisional
    distortion-corrected image.
 4. Validate an existing Gaia WCS or use TweakReg to align provisional sources
    to directly queried Gaia DR3; explicitly fall back to Legacy Tractor when
@@ -172,7 +172,9 @@ Reference-specific residual/offset/systematic criteria are configured under
 `options.astrometry.catalogs.{gaia_dr3,legacy_dr10}.validation`, in arcseconds.
 They are defaults for evaluation, not measured precision promises. Source
 isolation, shape, magnitude, SNR and Gaia quality cuts are configurable under
-`quality`. `shift` uses at least six matches; `rscale` requires at least ten.
+`quality`. There is no built-in six-reference or ten-reference requirement.
+Mathematical fit minima are separate from scientific acceptance; one absolute
+reference is diagnostic only. See the sparse-reference criteria below.
 Final-source detection can use angular FWHM so changing output scale does not
 implicitly change the angular detection model.
 
@@ -192,6 +194,69 @@ changes invalidate TweakBack and final drizzle while leaving background models
 alone. Per-filter receipts prevent unrelated filters from being invalidated.
 Astrometric cache restoration starts with the relative checkpoint; the same
 transformation is never compounded on an already-corrected exposure.
+
+
+## Compact references and source-selection provenance
+
+Point-source detection (`astrometry.detection.method: dao`) remains the default
+for absolute astrometry. For compact galaxies or nuclei missed by DAO detection,
+`compact_stable` reuses the existing Photutils segmentation and mandatory
+pixel/centroid QC at two kernel widths. A source must pass both measurements,
+match uniquely on the same SCI extension, meet HST S/N and centroid-stability
+requirements, and respect the configured catalog size limit. Neither catalog
+coordinates nor fitted residuals decide which morphology passes these cuts.
+Full-field relative detection and its target-specific fallback remain unchanged.
+
+Example explicit filter override (replace F689M as appropriate):
+
+```yaml
+filter_overrides:
+  F689M:
+    astrometry:
+      detection:
+        method: compact_stable
+        compact_kernel_widths: [3.5, 6.0]  # pixels on the image being measured
+        compact_min_snr: 10
+        compact_max_centroid_change_pix: 0.5
+      catalogs:
+        legacy_dr10:
+          quality:
+            min_snr: 0
+            max_position_error_mas: 200
+```
+
+This optional catalog policy replaces the Legacy flux-S/N cut with a finite,
+positive radial positional-error limit, while retaining coverage, primary-object,
+mask, blending, isolation and compact-morphology cuts. It does **not** relax the
+0.20-arcsec Legacy residual requirement or bypass independent HST centroid QC.
+The 200-mas example is a selection ceiling, not a precision claim. Do not enable
+it automatically for all fields: faint, blended or morphology-dependent catalog
+centroids still require review. Missing uncertainties fail this explicit policy.
+
+Audit tables distinguish pixel-quality acceptance from final source selection;
+rejected objects remain recorded. Absolute and final validations record
+`source_quality` and `source_selection` separately. Reports describe the active
+selection directly from configuration/stage results, without a target-specific
+resume script. Existing manifests with the older descriptive field remain readable.
+
+The J012930 F689M compact-only run retained two Legacy counterparts and obtained
+0.032 arcsec final RMS and 0.056 arcsec leave-one-out RMS. These are sparse fit-source
+checks, not independent held-out accuracy or a proof that other targets pass.
+Its source/CR checks and TweakBack completed; local-relative/full-field limitations
+remain explicitly distinct. No filter-specific thresholds or source IDs are
+hardcoded in the package.
+
+The `uvis/reporting/` package owns HTML rendering, astrometric tables, decision
+summaries and per-exposure alignment previews. Its public entry point remains
+`hstpipe.uvis.reporting.generate_report`. Internal helpers moved from
+`report_*.py` into `reporting.{astrometry,alignment,decisions}`.
+
+Report-only Python modules are excluded from the overall scientific cache key;
+a normal resume refreshes the report on a cache hit. Scientific source-selection
+changes still invalidate their dependent stages. Existing receipts are not
+rewritten to claim validity after a code change. A maintenance update can require
+revalidation when a normal reduction is next requested; it does not itself rerun
+reductions, discard products, or delete recovery trees.
 
 ## Background and science review
 

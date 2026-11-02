@@ -47,7 +47,7 @@ def test_failed_report_does_not_invent_sources_or_corrected_WCS(tmp_path):
 
 
 def test_accepted_existing_wcs_is_not_hidden_by_rejected_joint_proposal(tmp_path):
- from hstpipe.uvis.report_astrometry import context,render
+ from hstpipe.uvis.reporting.astrometry import context,render
  paths=ReductionPaths(tmp_path,'T','uvis','F336W');paths.area('intermediate','alignment',create=True)
  cats={}
  for name in ('r_flc.fits','a_flc.fits'):

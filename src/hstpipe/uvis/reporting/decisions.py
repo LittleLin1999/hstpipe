@@ -1,6 +1,6 @@
 """Brief human decisions from saved QA; no scientific state changes."""
 from __future__ import annotations
-from .report_astrometry import esc,number,table
+from .astrometry import esc,number,table
 
 
 def ready(record):
@@ -81,6 +81,16 @@ def concise_filter(key,record,ctx,technical):
     else:out+='<p>'+('Accepted '+esc(rel.get('method','relative WCS'))+'. Exposure-level corrections are in Technical details.' if rel.get('status')=='validated' else 'No relative correction accepted; original WCS retained.')+'</p>'
     out+='<p><strong>Absolute WCS:</strong> '+esc(ab.get('corrected_wcs_name','No accepted absolute solution'))+'. '
     out+='Corrections above use the internal tangent-plane pixels, not commanded dithers.</p>'
+    detection=record.get('configuration',{}).get('options',{}).get('astrometry',{}).get('detection',{})
+    selection=ab.get('validation',{}).get('source_selection') or {}
+    if selection.get('method')=='compact_stable' or detection.get('method')=='compact_stable':
+        snr=selection.get('min_hst_snr',detection.get('compact_min_snr',10.))
+        change=selection.get('max_centroid_change_pix',detection.get('compact_max_centroid_change_pix',.5))
+        out+='<p><strong>Absolute reference selection:</strong> Compact sources passing pixel/morphology checks in both segmentation kernels; HST S/N ≥'+number(snr,1)+', centroid change ≤'+number(change,2)+' pixel. Selection is independent of external fit residuals.</p>'
+    elif a.get('compact_absolute_selection'):
+        # Read historical resume manifests without requiring their ad-hoc field
+        # in newly generated reports.
+        out+='<p><strong>Absolute reference selection:</strong> '+esc(a['compact_absolute_selection'].get('description','Compact, stable HST sources only.'))+'</p>'
     if a.get('source_validation'):
         q=a['source_validation'];out+='<p><strong>Image checks:</strong> '+esc(q.get('status','not run'))+'; '+str(q.get('validated_sources',0))+' sources checked for flux, shape and CR rejection.</p>'
     out+='<p class="muted">Last reduction: '+esc(record.get('started_utc','not recorded'))+'. Refreshing this report does not rerun the reduction.</p>'

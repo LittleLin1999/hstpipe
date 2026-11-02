@@ -9,7 +9,7 @@ def test_official_api_dispatch(monkeypatch,tmp_path):
     paths=[tmp_path/'a_flc.fits',tmp_path/'b_flc.fits'];align(paths);drizzle(paths,tmp_path/'result')
     assert calls['align'][1]['updatehdr'] is True
     assert calls['drizzle'][1]['driz_cr'] is True
-    assert calls['drizzle'][1]['final_wht_type']=='IVM'
+    assert calls['drizzle'][1]['final_wht_type']=='EXP'
 
 def test_signed_sky_assessment_does_not_modify_flc(tmp_path):
     from astropy.io import fits

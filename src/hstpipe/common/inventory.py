@@ -18,6 +18,9 @@ FIELDS=('INSTRUME','DETECTOR','TARGNAME','OPT_ELEM','FILTER','APERTURE','PROPAPE
 
 def discover(directory,instrument=None):
     """Flat local inventory; duplicates are identified by content, not filename."""
+    if instrument=='uvis':
+        from ..uvis.inventory import discover as discover_uvis
+        return discover_uvis(directory)
     rows=[];seen={}
     for path in sorted(Path(directory).glob('*.fits')):
         with fits.open(path) as hd:

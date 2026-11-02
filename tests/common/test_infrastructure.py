@@ -9,10 +9,14 @@ from hstpipe.common.cache import StageCache
 import pytest
 
 def exposure(path,instrument='WFC3',detector='UVIS',subarray=False):
-    header=fits.Header(dict(INSTRUME=instrument,DETECTOR=detector,TARGNAME='TEST',FILTER='F606W',OPT_ELEM='G140L',PCTECORR='COMPLETE',SUBARRAY=subarray,APERTURE='UVIS',EXPTIME=100.))
+    header=fits.Header(dict(INSTRUME=instrument,DETECTOR=detector,TARGNAME='TEST',FILTER='F606W',OPT_ELEM='G140L',OBSTYPE='IMAGING',RA_TARG=10.,DEC_TARG=20.,ROOTNAME=path.stem,BIASCORR='COMPLETE',BLEVCORR='COMPLETE',DARKCORR='COMPLETE',FLATCORR='COMPLETE',PCTECORR='COMPLETE',SUBARRAY=subarray,APERTURE='UVIS',EXPTIME=100.))
     hd=[fits.PrimaryHDU(header=header)]
     for name in ('SCI','ERR','DQ'):
-        h=fits.ImageHDU(np.ones((8,9),dtype='f4'),name=name);h.header['EXTVER']=1;hd.append(h)
+        h=fits.ImageHDU(np.ones((8,9),dtype='u2' if name=='DQ' else 'f4'),name=name);h.header['EXTVER']=1
+        if name=='SCI':
+            from astropy.wcs import WCS
+            w=WCS(naxis=2);w.wcs.crpix=[4,4];w.wcs.cdelt=[-0.04/3600,0.04/3600];w.wcs.crval=[10,20];w.wcs.ctype=['RA---TAN','DEC--TAN'];h.header.update(w.to_header());h.header['BUNIT']='ELECTRONS'
+        hd.append(h)
     fits.HDUList(hd).writeto(path)
 
 def test_paths(tmp_path):
@@ -82,4 +86,4 @@ def test_force_rebuilds_even_with_resume(tmp_path):
         calls.append(True);p=paths.area('products',create=True)/'result.txt';p.write_text(str(len(calls)));return [p]
     run(c,engine);c.force=True;run(c,engine)
     assert len(calls)==2
-    assert list((tmp_path/'redux/TEST/uvis').glob('F606W.previous-*'))
+    assert list((tmp_path/'redux/TEST').glob('.uvis-history-TEST_F606W-*'))

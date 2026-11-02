@@ -11,7 +11,7 @@ def identity(path):
 
 def versions():
     result={'python':platform.python_version()}
-    for name in ('hstpipe','numpy','astropy','scipy','matplotlib','drizzle','stistools','drizzlepac'):
+    for name in ('hstpipe','numpy','astropy','scipy','matplotlib','photutils','drizzle','stistools','drizzlepac'):
         try:result[name]=version(name)
         except PackageNotFoundError:pass
     return result

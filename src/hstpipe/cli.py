@@ -13,7 +13,13 @@ def main(argv=None):
             p.add_argument('--input');p.add_argument('--output');p.add_argument('--config')
             p.add_argument('--target');p.add_argument('--grating' if instrument=='stis' else '--filter',dest='element');p.add_argument('--setup')
             p.add_argument('--dry-run',action='store_true');p.add_argument('--force',action='store_true');p.add_argument('--resume',action='store_true')
+        if instrument=='uvis':
+            p=commands.add_parser('migrate')
+            p.add_argument('--output',required=True);p.add_argument('--target');p.add_argument('--dry-run',action='store_true')
     args=parser.parse_args(argv)
+    if args.command=='migrate':
+        from .uvis.migration import migrate_uvis
+        print(json.dumps(migrate_uvis(args.output,target=args.target,dry_run=args.dry_run),indent=2));return
     if args.command=='inspect':
         if not args.input:parser.error('inspect requires --input')
         rows=discover(args.input,args.instrument)

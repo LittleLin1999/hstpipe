@@ -2,7 +2,8 @@
 import logging
 
 def reduction_logger(paths):
-    logfile=paths.area('logs',create=True)/'reduction.log'
+    paths.area('logs',create=True)
+    logfile=paths.file('logs',None,'reduction','log') if paths.instrument=='uvis' else paths.area('logs')/'reduction.log'
     logger=logging.getLogger('hstpipe.'+str(paths.directory));logger.setLevel(logging.INFO)
     for handler in list(logger.handlers):
         logger.removeHandler(handler);handler.close()

@@ -32,18 +32,21 @@ The consolidated X1D contains FLT/DRZ/X2D BINTABLEs and separate boxcar/optimal
 errors/masks. DQ aliases DQ_BOX; select optimal with DQ_OPT. No science defaults
 or units were changed for this infrastructure migration.
 
-UVIS starts from calibrated FLC working copies, with optional TweakReg alignment
-and official AstroDrizzle cosmic-ray rejection, sky handling and drizzle. The
-public align/drizzle/inspect_flc/validate_drizzle functions are independently
-usable. backgrounds are handled by AstroDrizzle options (skysub/skymethod),
-not a custom detector correction. Optional background_masks/amplifier_masks
-mappings supply integer-label SCI mask HDUs for exposure-specific off-source
-assessments. No automatic amplifier-offset correction is applied. These masks
-must be scientifically verified by the caller. Output SCI/WHT/CTX product:
+UVIS uses calibrated CTE-corrected FLC working copies, discovers every SCI/ERR/DQ
+imset, and validates internal exposure registration before provisional drizzle.
+External Gaia/Legacy catalogs may guide source identities; relative fitting uses
+measured HST centroids. Accepted absolute corrections on provisional images are
+propagated with STScI TweakBack before a new final AstroDrizzle pass.
 
-    redux/{target}/uvis/{filter}/[setup]/products/{target}_{filter}_drc.fits
+    redux/{target}/uvis/products/{target}_{filter}[_setup]_drc.fits
 
-Retained work lies in intermediate/alignment and intermediate/drizzle;
-assessment, alignment and drizzle QA lie in diagnostics. No real UVIS reduction
-was requested or validated in this STIS run. UVIS currently has whole-run cache
-reuse; its underlying DrizzlePac steps retain their own intermediates.
+Intermediate directories are shallow: catalogs, background, alignment, drizzle,
+and working. Diagnostics and logs are flat; filters/setup IDs are filenames.
+A standalone HTML report under 1 MB is always produced, including on failure.
+
+Persistent-source QA compares the final image to independent no-CR single-image
+drizzles on the same WCS. Raw CR peaks and whole-region flagged-pixel fractions
+are not treated as lost astronomical flux. Failed registration, astrometry or
+source/image QA blocks publication and retains review products. Stage caches
+allow unchanged upstream work to be reused. See [UVIS](uvis.md) for configuration,
+validation criteria, FITS semantics and remaining science limitations.

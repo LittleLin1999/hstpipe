@@ -7,7 +7,7 @@ files, diagnostics, configuration, and provenance needed to inspect each run.
 | Workflow | Inputs | Main outputs | Status |
 | --- | --- | --- | --- |
 | STIS FUV-MAMA/G140L | Calibrated `*_flt.fits`, matching `*_x2d.fits`, and reference tables | Two combined 2D spectra and boxcar/optimal 1D spectra | Validated on a six-exposure dataset |
-| WFC3/UVIS | CTE-corrected `*_flc.fits` with `PCTECORR=COMPLETE`, plus distortion references | Drizzled SCI/WHT/CTX image | Implemented; real-data astrometric and photometric validation is pending |
+| WFC3/UVIS | CTE-corrected `*_flc.fits` with `PCTECORR=COMPLETE`, plus distortion references | Drizzled SCI/WHT/CTX image | Two-pass Gaia/Legacy astrometry and persistent-source image QA exercised on J104242; per-target validation required |
 
 Other STIS modes, COS, and ACS are not currently supported. Data downloading is
 separate: install the software first, then supply your observations and references.
@@ -206,3 +206,5 @@ The empirical optimal-profile branch-flux discrepancy remains a known limitation
 - [Validation results and limitations](docs/VALIDATION.md)
 - [Historical STIS science-method notes](docs/STIS_LEGACY.md)
 - [Package architecture](docs/ARCHITECTURE.md)
+
+UVIS imaging reduction, configuration and scientific QA: [docs/uvis.md](docs/uvis.md).

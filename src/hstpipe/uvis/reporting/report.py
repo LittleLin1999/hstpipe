@@ -283,7 +283,7 @@ def _review_figure(cutfile,source,key):
     w=weight[np.isfinite(weight)&(rr<=12**2)];wmax=float(np.max(w)) if len(w) else 1.
     im=panel(axes[-1,3],weight,'WHT coverage\nDark: lower weight',cmap='viridis',vmin=0,vmax=max(wmax,1e-12))
     cb=fig.colorbar(im,ax=axes[-1,3],shrink=.65,pad=.02);cb.set_label('Recorded WHT values',fontsize=8);cb.ax.tick_params(labelsize=7)
-    fig.suptitle(key+' · '+sid+' · source requiring review',fontsize=12)
+    fig.suptitle(key+' · '+sid+' · source QA review',fontsize=12)
     fig.supxlabel('Offset from fixed source position (output pixels) · cyan cross: reference · orange circle: flagged aperture',fontsize=9)
     stream=io.BytesIO();fig.savefig(stream,format='jpeg',dpi=110,pil_kwargs={'quality':78,'optimize':True});fig.clear()
     caption=(key+' — '+sid+'. '+str(len(shown))+' of '+str(len(inputs))+' individual exposures shown, separately drizzled without AstroDrizzle CR masking onto the final grid; these are not raw detector panels. '

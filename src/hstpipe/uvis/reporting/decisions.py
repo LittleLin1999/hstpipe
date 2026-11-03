@@ -10,6 +10,8 @@ def ready(record):
 def decision(record):
     a=record.get('scientific_assessment',{});rel=a.get('relative_astrometry',a.get('alignment',{}));ab=a.get('astrometry',{})
     if ready(record):
+        if a.get('source_review',{}).get('decision')=='approved':
+            return 'Ready — human reviewed','Astrometry passed. The reviewer accepted the recorded field-source flux flags; automatic warnings remain.','Use the reviewed DRC with its documented photometric limitations.'
         pairs=rel.get('pairs',[]) or rel.get('original',{}).get('pairs',[])
         if rel.get('scope')=='sparse_source_constrained' or any(p.get('validation_scope')=='local_shift_only' for p in pairs):
             return 'Ready with sparse-source limits','Final image checks passed. Relative registration is constrained locally; field rotation is not independently validated.','Use the DRC with the recorded sparse-source astrometric limitation.'
@@ -38,14 +40,16 @@ def decision(record):
 
 def image_review_section(filters,figures=None):
     """Visible review instructions from actual failed source checks, not fit status."""
-    sections=[]
+    sections=[];pending=False
     for key,record in sorted(filters.items()):
         a=record.get('scientific_assessment',{});q=a.get('source_validation',{})
         failed=[source for source in q.get('sources',[]) if source.get('status')=='review_required']
         if q.get('status')!='review_required' and not failed:continue
-        image=a.get('unvalidated_final') or ''
+        approval=a.get('source_review') or {};accepted=approval.get('decision')=='approved' and ready(record);pending|=not accepted
+        image=(record['products'][0]['path'] if accepted else a.get('unvalidated_final')) or ''
         if isinstance(image,dict):image=image.get('path','')
-        text='<h3>'+esc(key)+'</h3>'
+        text='<h3>'+esc(key)+(' — review accepted' if accepted else '')+'</h3>'
+        if accepted:text+='<p><strong>Approved by '+esc(approval.get('reviewer'))+' on '+esc(approval.get('reviewed_utc'))+'.</strong> '+esc(approval.get('reason'))+' Automated measurements below are preserved; approval does not demonstrate zero field-source flux error.</p>'
         if image:text+='<p><strong>File to inspect:</strong> <code>'+esc(str(image).split('/')[-1])+'</code> — SCI and WHT extensions.</p>'
         rows=[]
         for source in failed:
@@ -67,9 +71,9 @@ def image_review_section(filters,figures=None):
         text+=table(('Flagged source','SCI X, Y (1-based)','Reason','Failed measurement','Other apertures'),rows) if rows else '<p>No per-source failure details were recorded; inspect the saved QA diagnostics.</p>'
         for source in failed:text+=(figures or {}).get((key,str(source.get('source_id',''))),'')
         text+='<p><strong>What to inspect:</strong> Locate the source at the SCI position above. Compare its core in the individual exposures, independent no-CR reference, final SCI and WHT. Inspect CR masks for rejection of real source pixels, residual cosmic rays or source broadening.</p>'
-        text+='<p><strong>Decision:</strong> These are review images, not validated science products. A flux discrepancy alone does not prove CR overrejection: sampling and median-versus-weighted-combination differences also matter. Resolve the flagged measurement before precision photometry; do not change the validation flag by hand.</p>'
+        text+='<p><strong>Decision:</strong> '+('This image is published as human-reviewed science-ready data, with the field-source caveat retained. ' if accepted else 'These are review images, not validated science products. ')+ ' A flux discrepancy alone does not prove CR overrejection: sampling and median-versus-weighted-combination differences also matter. Assess precision-photometry suitability for the intended source and aperture; do not change validation flags by hand.</p>'
         sections.append(text)
-    return '<section class="review-required"><h2>Human review required — inspect these sources</h2>'+''.join(sections)+'</section>' if sections else ''
+    return '<section class="review-required"><h2>'+('Human review required — inspect these sources' if pending else 'Human review accepted — retained QA evidence')+'</h2>'+''.join(sections)+'</section>' if sections else ''
 
 
 def overview_row(key,record):
@@ -129,7 +133,7 @@ def concise_filter(key,record,ctx,technical):
         # in newly generated reports.
         out+='<p><strong>Absolute reference selection:</strong> '+esc(a['compact_absolute_selection'].get('description','Compact, stable HST sources only.'))+'</p>'
     if a.get('source_validation'):
-        q=a['source_validation'];out+='<p><strong>Image checks:</strong> '+esc(q.get('status','not run'))+'; '+str(q.get('validated_sources',0))+' sources checked for flux, shape and CR rejection.</p>'
+        q=a['source_validation'];out+='<p><strong>Automated image checks:</strong> '+esc(q.get('status','not run'))+'; '+str(q.get('validated_sources',0))+' sources checked for flux, shape and CR rejection.</p>'
     out+='<p class="muted">Last reduction: '+esc(record.get('started_utc','not recorded'))+'. Refreshing this report does not rerun the reduction.</p>'
     # All numerical provenance remains available without dominating the page.
     out+='<details class="technical"><summary>Technical details: stages, all sources, offsets, WCS and QA</summary>'+technical.replace('<details open>','<details>')+'</details></details>'

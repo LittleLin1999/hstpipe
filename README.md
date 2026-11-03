@@ -182,6 +182,12 @@ copies. Unvalidated stages block publication; original FLCs remain unchanged.
 An offline, self-contained report is generated even on failure and is smaller
 than 1,000,000 bytes.
 
+If the report says **Review image QA**, inspect its visible source-review figure
+and compare the science target separately from flagged field sources. An explicit
+human acceptance can publish the existing image as `HPQASTAT=REVIEWED`, retaining
+the automatic warnings and unchanged pixels. See [what to review and what to do
+after review](docs/uvis.md#review-and-publication) for the approval API and limits.
+
 Configure `options.astrometry` and `options.drizzle`; use
 `options.background.mode: none` when no sky subtraction is wanted. The pipeline
 handles AstroDrizzle sky keywords to avoid double subtraction. Final defaults are

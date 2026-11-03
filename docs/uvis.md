@@ -372,3 +372,73 @@ they require a normal astrometric revalidation. Final image/source QA still runs
 The no-CR source-QA reference resets only AstroDrizzle DQ bit 4096 on disposable
 copies before separate drizzle. It preserves calwf3 bit 8192, other detector
 flags and SCI values; production CR masks cannot bias both sides of this check.
+
+
+## Review and publication
+
+**Review image QA** is different from failed astrometry. First check the report's
+relative, post-TweakBack and final absolute WCS statuses. A field-source review
+cannot waive a failed astrometric solution, guiding problem, target-shaped WHT
+hole, or other unresolved image-quality failure.
+
+For each flagged source, inspect the visible review figure and measurement table:
+
+1. Identify the source and its distance from the science target; do not assume
+   a field-source warning proves that target flux was lost.
+2. Compare the individual no-CR exposure panels at the fixed reference cross.
+   Look for source doubling, unstable centroids, residual CRs and masked cores.
+3. Compare the no-CR median reference, final SCI, difference map and WHT. Use the
+   flagged aperture radius; an agreeing larger aperture does not erase a small
+   aperture warning. SCI panels use a shared display scale; residual/WHT scales
+   are separate. These individually drizzled panels are not raw detector arrays.
+4. Inspect detector CR masks if real-source rejection is suspected. Median versus
+   weighted combination, pixel sampling and centering can also change core flux.
+   Visual agreement is not independent proof of precision photometry.
+5. Decide whether the remaining field-source discrepancy is acceptable for the
+   intended science, and record the source IDs and scientific justification.
+
+If the issue is unacceptable or affects the science target, keep the image under
+review. Correct the identified cause and rerun only affected stages, then repeat
+QA. Do not multiply the science image by an arbitrary flux correction, lower an
+accuracy threshold to force a pass, or edit FITS status keywords manually.
+
+If astrometry and other image checks already pass, an explicitly reviewed
+**field-source flux-only exception** can be accepted without another drizzle:
+
+```python
+from hstpipe.uvis import approve_source_review
+
+product = approve_source_review(
+    '/data/redux/TARGET/uvis', 'F336W',
+    reviewer='Reviewer name',
+    reason='Reviewed the flagged field source and accept its documented '
+           'small-aperture discrepancy for the intended target analysis.',
+    source_ids=['G_source_id_from_report'],
+    expected_sha256='SHA256_OF_THE_EXACT_REVIEW_FITS_YOU_INSPECTED',
+)
+```
+
+Use the actual target reduction directory containing `manifest.json`, not a
+report-only merged view. Obtain the checksum with `sha256sum` (Linux) or
+`shasum -a 256` (macOS) on the named `*_unvalidated_final.fits`. The API checks the
+exact image, original inputs, source identities, target exclusion region and
+passed astrometry. It refuses target/coverage/morphology flags and unrelated
+image warnings; those need resolution rather than this approval path.
+
+On approval, the existing SCI/WHT/CTX arrays, WCS, units and calibration remain
+unchanged. The product is published as `products/{target}_{filter}_drc.fits` with
+`HPQASTAT=REVIEWED`, `HPREVIEW=T`, and reviewer/date/reason/source provenance in
+FITS HISTORY. `ASTSTAT` and `ASTREL` retain their independently established values.
+The original `source_validation.status=review_required` and all measurements are
+preserved. The manifest records `source_review`, and the HTML says **Ready —
+human reviewed** with the figures and warnings still visible. The original
+review FITS remains an immutable audit input on the reduction server.
+
+Approval is limited to the exact image and source-QA assessment; it is not a
+new default masking policy and does not certify target precision photometry.
+Repeated approval of the same unchanged record is idempotent. It does not rerun
+source detection, alignment, TweakBack, drizzle or photometry. A normal subsequent
+reduction or changed science dependencies must be revalidated; this receipt is
+not a blanket approval of future products. Accepted products can be synced to
+local `products/`; remove superseded local review copies only after verifying
+the new file's checksum. Keep the original review evidence on the server.

@@ -210,10 +210,15 @@ def _plot(panels,paths):
     fig.tight_layout();fig.savefig(paths.file('diagnostics','drizzle','source_validation','png'),dpi=105);plt.close(fig)
 
 
-def publish_validated_image(product,paths,assessment):
+def publish_validated_image(product,paths,assessment,*,review=None):
     """Publish an assessed image without changing SCI/WHT/CTX or the WCS."""
     from .qa import validate_drizzle
-    if assessment.get('status')!='validated':raise ValueError('Persistent-source validation must pass before publication')
+    if assessment.get('status')!='validated' and review is None:raise ValueError('Persistent-source validation must pass before publication')
+    if review is not None:
+        if (review.get('decision')!='approved' or not review.get('reviewer') or not review.get('reason')
+                or review.get('assessment_sha256')!=_assessment_digest(assessment)
+                or review.get('input_image',{}).get('sha256')!=identity(product)['sha256']):
+            raise ValueError('Review must identify the exact image and unchanged automated assessment')
     product=Path(product);validate_drizzle(product)
     with fits.open(product) as hd:
         if hd['SCI'].header.get('ASTSTAT')!='VALIDATED':raise ValueError('Absolute astrometry is not validated')
@@ -223,10 +228,16 @@ def publish_validated_image(product,paths,assessment):
     with paths.scratch('publish-') as tmp:
         candidate=Path(tmp)/destination.name;paths.copy(product,candidate)
         with fits.open(candidate,mode='update') as hd:
-            hd[0].header['HPQASTAT']=('VALIDATED','Astrometry and persistent-source image QA passed')
+            hd[0].header['HPQASTAT']=('REVIEWED' if review else 'VALIDATED','Human-approved QA exceptions' if review else 'Astrometry and persistent-source image QA passed')
             hd[0].header['HPSRCQA']=(assessment.get('version',VERSION),'Persistent-source CR/image assessment')
             hd[0].header['HPNQASRC']=(assessment.get('validated_sources',0),'Repeatable astronomical sources assessed')
             hd[0].header.add_history('Source/CR QA: independent no-CR input drizzles, empirical aperture/shape checks and WHT coverage; raw bright peaks are not classified as stars')
+            if review:
+                hd[0].header['HPREVIEW']=(True,'Explicit human acceptance; automated warnings retained')
+                hd[0].header['HPRVAUTO']=('REVIEW','Original automated source-QA status')
+                hd[0].header['HPRVWHO']=review['reviewer'].encode('ascii','backslashreplace').decode();hd[0].header['HPRVDATE']=review['reviewed_utc']
+                hd[0].header.add_history('Human review of field-source photometry only; no SCI, WHT, CTX, WCS or calibration changes.')
+                hd[0].header.add_history('Human review provenance: '+json.dumps(review,sort_keys=True,ensure_ascii=True))
             for h in hd:
                 if h.name in before and hashlib.sha256(h.data.tobytes()).hexdigest()!=before[h.name]:raise ValueError('Image arrays changed during QA annotation')
                 h.add_checksum()
@@ -237,3 +248,79 @@ def publish_validated_image(product,paths,assessment):
             recovery.mkdir(parents=True);paths.copy(destination,recovery/destination.name)
         paths.copy(candidate,destination)
     return destination
+
+
+def _assessment_digest(assessment):
+    return hashlib.sha256(json.dumps(assessment,sort_keys=True,allow_nan=False).encode()).hexdigest()
+
+
+def approve_source_review(directory,filter_key,*,reviewer,reason,source_ids,expected_sha256):
+    """Publish exact reviewed pixels after explicit acceptance of field-source flux flags.
+
+    This is not an astrometric override or a correction to photometry. Automatic
+    measurements remain unchanged. A different image requires a new approval.
+    """
+    from datetime import datetime,timezone
+    from astropy.coordinates import SkyCoord
+    from astropy.wcs import WCS
+    import astropy.units as u
+    from ..common.paths import ReductionPaths
+    from ..common.target_runner import target_lock,save
+    from .reporting import generate_report
+    directory=Path(directory).resolve();manifest=directory/'manifest.json'
+    if not reviewer.strip() or not reason.strip():raise ValueError('Reviewer and scientific reason are required')
+    state=json.loads(manifest.read_text());record=state['filters'][filter_key]
+    paths=ReductionPaths(directory.parent.parent,state['target'],'uvis',record['filter'],record.get('setup'))
+    if paths.directory!=directory or paths.group_key!=filter_key:raise ValueError('Review must use the target reduction directory and exact filter/setup key')
+    with target_lock(directory,filter_key),target_lock(directory):
+        state=json.loads(manifest.read_text());record=state['filters'][filter_key];a=record['scientific_assessment'];q=a['source_validation']
+        old=a.get('source_review') or {}
+        if old.get('decision')=='approved':
+            if old['input_image']['sha256']!=expected_sha256 or sorted(old['source_ids'])!=sorted(source_ids):raise ValueError('Approval refers to a different image or source set')
+            destination=paths.product('drc')
+            if old['assessment_sha256']!=_assessment_digest(q) or identity(destination)!=record['products'][0]:raise ValueError('Reviewed product or assessment has changed')
+            generate_report(directory);return destination
+        if record.get('status')!='image_quality_review_required':raise ValueError('Only completed images awaiting source QA review can be approved')
+        if (a.get('relative_astrometry',{}).get('status')!='validated' or a.get('relative_after_tweakback',{}).get('status')!='validated'
+                or a.get('astrometry',{}).get('status')!='validated' or a['astrometry'].get('final_validation',{}).get('status')!='validated'):
+            raise ValueError('Relative, post-TweakBack and final absolute astrometry must already pass')
+        if a.get('final',{}).get('warnings') or any((c.get('current_cr_fraction') or 0)>.1 for chips in a.get('cr',{}).values() for c in chips):
+            raise ValueError('Other image/coverage or excessive-CR warnings require separate resolution')
+        failed=[v for v in q.get('sources',[]) if v.get('status')=='review_required']
+        allowed={'significant_persistent_source_flux_loss','significant_source_flux_excess'}
+        if (q.get('status')!='review_required' or not failed or set(source_ids)!={v['source_id'] for v in failed}
+                or any(not v.get('failures') or not set(v['failures'])<=allowed for v in failed)):
+            raise ValueError('Identify every flagged field source; this review path accepts flux-only exceptions')
+        product=Path(a['unvalidated_final']);input_image=identity(product)
+        if not product.is_relative_to(directory/'intermediate') or input_image['sha256']!=expected_sha256:raise ValueError('Review image identity does not match explicit approval')
+        for item in record.get('inputs',[]):
+            if identity(item['path'])!=item:raise ValueError('Original input identity changed since reduction')
+        # The already-configured science-target exclusion radius is a safeguard,
+        # not an automatic assertion that every distant source is a field star.
+        geometry=record['observing_configurations'][0]
+        target=SkyCoord(float(geometry['RA_TARG'])*u.deg,float(geometry['DEC_TARG'])*u.deg)
+        radius=float(a['effective_parameters']['background']['target_radius']);details=[]
+        with fits.open(product) as hd:
+            w=WCS(hd['SCI'].header,hd)
+            for v in failed:
+                xy=[v['output_x'],v['output_y']]
+                if not np.isfinite(xy).all():raise ValueError('Field-source position is not finite')
+                sky=w.all_pix2world([xy],0)[0];separation=float(target.separation(SkyCoord(sky[0]*u.deg,sky[1]*u.deg)).arcsec)
+                if not np.isfinite(separation) or separation<=radius:raise ValueError('Source lies inside the protected science-target region')
+                details.append(dict(source_id=v['source_id'],separation_from_target_arcsec=separation,failures=v['failures'],apertures=v['apertures']))
+        review=dict(decision='approved',reviewer=reviewer.strip(),reason=reason.strip(),reviewed_utc=datetime.now(timezone.utc).isoformat(),
+            source_ids=sorted(set(source_ids)),scope='Explicit acceptance of field-source flux flags for this image; target precision photometry not independently certified',
+            input_image=input_image,assessment_sha256=_assessment_digest(q),sources=details,automatic_status=q['status'],scientific_arrays_changed=False)
+        receipt=paths.file('intermediate','drizzle','source_review');destination=publish_validated_image(product,paths,q,review=review)
+        save(receipt,review);a['source_review']=review;a['status']='science_ready';a['final']['validation_status']='human_reviewed'
+        a.setdefault('stages',{})['source_cr_validation']=dict(status='human_reviewed',automatic_status=q['status'],review_receipt=str(receipt))
+        a['stages']['final_drizzle']=dict(status='complete',outputs=[str(destination)],rerun_for_review=False)
+        record.update(status='complete',products=[identity(destination)])
+        qa=paths.file('diagnostics','drizzle','qa_summary');save(qa,a)
+        updated={str(p.resolve()):identity(p) for p in (destination,receipt,qa)}
+        record['artifacts']=[v for v in record.get('artifacts',[]) if v['path'] not in updated]+list(updated.values())
+        record['intermediate_files']=[v for v in record['artifacts'] if '/intermediate/' in v['path']]
+        save(manifest,state)
+        cache=paths.cache();cache.record('uvis_source_review',cache.key([product],review),[destination,receipt])
+        generate_report(directory)
+        return destination

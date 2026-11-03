@@ -140,3 +140,61 @@ def test_final_pipeline_uses_persistent_source_gate_not_raw_peaks(flc,tmp_path,m
     if products:
         with fits.open(products[0]) as hd:assert hd[0].header['HPQASTAT']=='VALIDATED'
     else:assert result['status']=='image_quality_review_required' and result['unvalidated_final']
+
+
+@pytest.fixture
+def pending_human_review(flc,tmp_path):
+    from astropy.io import fits
+    from hstpipe.common.paths import ReductionPaths
+    from hstpipe.common.provenance import identity
+    from hstpipe.common.target_runner import save
+    from hstpipe.uvis.inventory import validate_flc
+    raw=flc(size=64);paths=ReductionPaths(tmp_path/'redux','TEST','uvis','F275W')
+    with fits.open(raw) as hd:
+        header=hd['SCI'].header.copy();header['BUNIT']='ELECTRONS/S';header['ASTSTAT']='VALIDATED';header['ASTREL']='validated';data=hd['SCI'].data.copy()
+    review=paths.file('intermediate','drizzle','unvalidated_final','fits');review.parent.mkdir(parents=True)
+    fits.HDUList([fits.PrimaryHDU(),fits.ImageHDU(data,header=header,name='SCI'),fits.ImageHDU(np.ones_like(data),name='WHT'),fits.ImageHDU(np.ones_like(data,dtype='i4'),name='CTX')]).writeto(review)
+    source=dict(source_id='Gfield',status='review_required',output_x=55.,output_y=55.,failures=['significant_persistent_source_flux_loss'],observations=[],apertures=[dict(radius_pix=2.5,status='review_required',loss_fraction=.03,loss_significance=4.)])
+    assessment=dict(status='image_quality_review_required',relative_astrometry=dict(status='validated'),relative_after_tweakback=dict(status='validated'),astrometry=dict(status='validated',final_validation=dict(status='validated')),final=dict(warnings=[],validation_status='review_required'),source_validation=dict(status='review_required',version='persistent-source-3',validated_sources=2,failed_sources=1,sources=[source]),unvalidated_final=str(review),effective_parameters=dict(background=dict(target_radius=.3)))
+    record=dict(filter='F275W',setup=None,status='image_quality_review_required',products=[],inputs=[identity(raw)],observing_configurations=[validate_flc(raw)],scientific_assessment=assessment)
+    state=dict(schema_version=2,instrument='uvis',target='TEST',filters={'F275W':record,'F621M':dict(filter='F621M',status='relative_astrometry_unvalidated',products=[],scientific_assessment={})})
+    save(paths.directory/'manifest.json',state)
+    return paths,review,raw,state
+
+
+def test_human_review_publishes_exact_pixels_with_warning_provenance(pending_human_review):
+    import json
+    from astropy.io import fits
+    from hstpipe.common.provenance import identity
+    from hstpipe.uvis import approve_source_review
+    paths,review,raw,state=pending_human_review;before=identity(review);raw_before=identity(raw)
+    result=approve_source_review(paths.directory,'F275W',reviewer='Human reviewer',reason='Accept field-source aperture discrepancy for intended target analysis',source_ids=['Gfield'],expected_sha256=before['sha256'])
+    updated=json.loads((paths.directory/'manifest.json').read_text());record=updated['filters']['F275W'];a=record['scientific_assessment']
+    assert record['status']=='complete' and a['status']=='science_ready'
+    assert a['source_validation']==state['filters']['F275W']['scientific_assessment']['source_validation']
+    assert updated['filters']['F621M']==state['filters']['F621M']
+    assert identity(review)==before and identity(raw)==raw_before
+    with fits.open(result) as hd,fits.open(review) as original:
+        assert hd[0].header['HPQASTAT']=='REVIEWED' and hd[0].header['HPRVAUTO']=='REVIEW'
+        for name in ('SCI','WHT','CTX'):assert np.array_equal(hd[name].data,original[name].data)
+        assert hd['SCI'].header['ASTSTAT']=='VALIDATED'
+    product_before=identity(result)
+    assert approve_source_review(paths.directory,'F275W',reviewer='Human reviewer',reason='Same approval',source_ids=['Gfield'],expected_sha256=before['sha256'])==result
+    assert identity(result)==product_before
+    html=paths.report().read_text();assert 'Human review accepted' in html and 'Ready — human reviewed' in html
+    assert paths.report().stat().st_size<1_000_000
+
+
+@pytest.mark.parametrize('problem',['astrometry','checksum','target','morphology'])
+def test_human_review_cannot_waive_unrelated_or_stale_failures(pending_human_review,problem):
+    from hstpipe.common.provenance import identity
+    from hstpipe.common.target_runner import save
+    from hstpipe.uvis import approve_source_review
+    paths,review,raw,state=pending_human_review;a=state['filters']['F275W']['scientific_assessment'];sha=identity(review)['sha256']
+    if problem=='astrometry':a['astrometry']['final_validation']['status']='unvalidated'
+    if problem=='checksum':sha='0'*64
+    if problem=='target':a['source_validation']['sources'][0].update(output_x=31.,output_y=31.)
+    if problem=='morphology':a['source_validation']['sources'][0]['failures']=['source_shaped_weight_deficit']
+    save(paths.directory/'manifest.json',state)
+    with pytest.raises(ValueError):approve_source_review(paths.directory,'F275W',reviewer='Human reviewer',reason='Accept field-source flux only',source_ids=['Gfield'],expected_sha256=sha)
+    assert not paths.product('drc').exists()

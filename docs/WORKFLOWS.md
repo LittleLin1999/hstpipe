@@ -44,8 +44,9 @@ options:
 HSTCAL installed by the setup script. To reuse existing controls, set
 `options.control_dir` to their directory and `options.prepare_controls: false`.
 That directory must contain `*_flt_omit.fits`, `*_flt_perform.fits`, and
-`*_flt_mapping.f64` for each input FLT. Use reference tables that match the
-observations; changing calibration versions changes the reduction.
+`*_flt_mapping.f64` for each input FLT. Missing header-named references are downloaded automatically into
+`reference_dir`; existing files are reused. See [calibration download settings](INSTALLATION.md#download-calibration-references).
+Changing calibration versions changes the reduction.
 
 Preview the selected inputs and output location, then start processing:
 

@@ -26,7 +26,6 @@ def _engine(config,paths,exposures,*,prepare_only=False):
     opts=settings(config.options);two_pass=opts['astrometry']['method']=='two_pass';report=dict(inventory={e.path.name:e.metadata for e in exposures},grouping=[],excluded=[],exposures={},background={},alignment={},cr={})
     from .dq import policy,mdriztab_recommendation
     report['dq_policy']=policy(opts)
-    report['mdriztab']=mdriztab_recommendation(exposures[0].path,len(exposures)) if exposures else {}
     rows=[]
     for e in exposures:
         report['grouping'].append(dict(path=str(e.path),reason=e.metadata['grouping_reason'],geometry=e.metadata['geometry']))
@@ -38,6 +37,9 @@ def _engine(config,paths,exposures,*,prepare_only=False):
             raise ValueError(f'Missing embedded distortion WCS: {e.path.name}; update working-copy WCS with STScI references before reduction')
         rows.append(e)
     if not rows:raise ValueError('All group exposures explicitly excluded')
+    from ..common.calibration import ensure_uvis_references
+    report['calibration_references']=ensure_uvis_references([e.path for e in rows],config,paths)
+    report['mdriztab']=mdriztab_recommendation(rows[0].path,len(rows))
     report['dq_policy']=policy(opts,len(rows))
     report['sampling']=dict(final_scale=opts['drizzle']['final_scale'],final_pixfrac=opts['drizzle']['final_pixfrac'],driz_sep_pixfrac=opts['drizzle']['driz_sep_pixfrac'],nimages=len(rows),commanded_offsets={e.metadata['ROOTNAME']:[e.metadata.get('POSTARG1'),e.metadata.get('POSTARG2')] for e in rows},rationale='Configured final sampling; evaluate dither coverage and source-core weights. Separate-drizzle CR reference pixfrac is recorded independently.')
     background=paths.area('intermediate','background',create=True)

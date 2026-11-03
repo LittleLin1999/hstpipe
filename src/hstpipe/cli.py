@@ -21,7 +21,20 @@ def main(argv=None):
             mode=p.add_mutually_exclusive_group()
             mode.add_argument('--apply',action='store_true',help='Remove the eligible diagnostic files')
             mode.add_argument('--dry-run',action='store_true',help='Preview only (default)')
+            p=commands.add_parser('review',help='Inspect or approve recorded UVIS field-source QA')
+            p.add_argument('--directory',required=True);p.add_argument('--filter',required=True)
+            p.add_argument('--approve',action='store_true');p.add_argument('--reviewer');p.add_argument('--reason')
     args=parser.parse_args(argv)
+    if args.command=='review':
+        from .common.uvis_review import review_uvis
+        result=review_uvis(args.directory,args.filter,approve=args.approve,reviewer=args.reviewer,reason=args.reason)
+        print(f"{result['target']} / {result['filter']} — {result['status']}")
+        print('Report:',result['report']);print('Review image:',result['image'])
+        for source in result['sources']:
+            print('Source',source['source_id'],':',', '.join(source['failures']))
+        if result['approved']:print('Published:',result['product'])
+        else:print('Preview only. Inspect the current report; use --approve --reviewer NAME --reason TEXT to accept all listed field-source flux flags. Other scientific gates still apply.')
+        return
     if args.command=='cleanup':
         from .common.uvis_cleanup import cleanup_uvis
         print(json.dumps(cleanup_uvis(args.output,target=args.target,apply=args.apply),indent=2));return

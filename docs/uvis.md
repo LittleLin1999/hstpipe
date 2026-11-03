@@ -16,7 +16,9 @@ publish an image after review. Original downloaded FLCs are never modified.
 ## Run a reduction
 
 Activate the installed environment and work from your observations directory.
-Set `iref` to the matching UVIS distortion references, including the trailing `/`.
+Set `iref` to your UVIS reference directory, including the trailing `/`.
+Missing header-named references are downloaded automatically through HST CRDS.
+See [reference locations and offline settings](INSTALLATION.md#download-calibration-references).
 
 ```bash
 export iref=/absolute/path/to/observations/calibration/uvis/
@@ -109,25 +111,30 @@ accuracy threshold to force a pass, or edit FITS status keywords manually.
 If astrometry and other image checks already pass, an explicitly reviewed
 **field-source flux-only exception** can be accepted without another drizzle:
 
-```python
-from hstpipe.uvis import approve_source_review
+```bash
+# Preview the current image and flagged sources; no approval is made.
+hstpipe uvis review --directory /data/redux/TARGET/uvis --filter F336W
 
-product = approve_source_review(
-    '/data/redux/TARGET/uvis', 'F336W',
-    reviewer='Reviewer name',
-    reason='Reviewed the flagged field source and accept its documented '
-           'small-aperture discrepancy for the intended target analysis.',
-    source_ids=['G_source_id_from_report'],
-    expected_sha256='SHA256_OF_THE_EXACT_REVIEW_FITS_YOU_INSPECTED',
-)
+# After inspecting the current report, accept the listed field-source flux flags.
+hstpipe uvis review --directory /data/redux/TARGET/uvis --filter F336W \
+  --approve --reviewer "Your name" \
+  --reason "Reviewed the field-source core-flux discrepancy; acceptable for my target analysis."
 ```
 
 Use the actual target reduction directory containing `manifest.json`, not a
-report-only merged view. Obtain the checksum with `sha256sum` (Linux) or
-`shasum -a 256` (macOS) on the named `*_unvalidated_final.fits`. The API checks the
-exact image, original inputs, source identities, target exclusion region and
-passed astrometry. It refuses target/coverage/morphology flags and unrelated
-image warnings; those need resolution rather than this approval path.
+report-only merged view. The command finds the recorded image and source IDs,
+and verifies the saved file checksum internally. **You do not need to calculate
+or copy a checksum.** If the image has changed or its recorded identity is
+missing, approval stops; inspect and validate the new assessment first.
+
+Approval applies to all listed field-source flux flags in this filter. The same
+scientific checks still refuse failed astrometry, target-region issues, coverage
+or morphology flags, and unrelated image warnings. This command does not waive
+those failures or start another reduction.
+
+The lower-level Python API `approve_source_review` still accepts
+`expected_sha256` for scripts that need to bind approval to a specific image.
+Ordinary users should use the command above.
 
 ### What approval changes
 

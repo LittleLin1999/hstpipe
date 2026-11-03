@@ -7,15 +7,21 @@ from .amplifiers import reference_path
 def code_inputs():
     # Presentation changes regenerate the report on a normal cache hit. They
     # must not invalidate scientific reduction receipts by themselves.
-    return sorted(p for p in Path(__file__).parent.rglob('*.py')
+    return [Path(__file__).parents[1]/'common/calibration.py']+sorted(p for p in Path(__file__).parent.rglob('*.py')
                   if 'reporting' not in p.relative_to(Path(__file__).parent).parts
                   and p.name!='reporting.py' and not p.name.startswith('report_') and not p.name.startswith('._'))
 
 def references(options,rows):
     refs=[]
     if options['alignment'].get('refcat'):refs.append(Path(options['alignment']['refcat']))
-    if options['background']['amplifier_correction']:refs.extend(reference_path(e.metadata['PFLTFILE']) for e in rows)
-    return refs
+    from ..common.calibration import reference_requests,reference_location
+    import os
+    directory=Path(options.get('calibration',{}).get('directory') or os.environ.get('iref') or '.')
+    for item in reference_requests([e.path for e in rows],bool(options['background']['amplifier_correction'] or options['background'].get('amplifier_assess'))):
+        try:path=reference_location(item['header_value'],directory)
+        except ValueError:continue  # Preparation records the actionable error.
+        if path.is_file():refs.append(path)
+    return list(dict.fromkeys(refs))
 
 def stage_keys(cache,rows,options,copies,identification=None):
     package=Path(__file__).parent
@@ -24,7 +30,8 @@ def stage_keys(cache,rows,options,copies,identification=None):
     cr_code=[package/n for n in ('drizzle.py','qa.py')]
     raw=[e.path for e in rows]
     refs=references(options,rows)
-    background=cache.key(raw+background_code+[p for p in refs if p!=Path(options['alignment'].get('refcat',''))],
+    background_refs=[reference_path(e.metadata['PFLTFILE']) for e in rows] if options['background']['amplifier_correction'] or options['background'].get('amplifier_assess') else []
+    background=cache.key(raw+background_code+background_refs,
                          dict(background=options['background'],versions=versions()))
     alignment_parameters=dict(options['alignment'],relative=options['astrometry']['relative'],source_identification=options['astrometry']['source_identification'])
     idfiles=[Path(p) for p in (identification or {}).get('hst_catalogs',[])]

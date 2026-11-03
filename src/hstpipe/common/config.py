@@ -44,6 +44,10 @@ class ReductionConfig:
         if data.get('instrument')=='uvis' and data.get('options',{}).get('alignment',{}).get('refcat'):
             p=Path(data['options']['alignment']['refcat']).expanduser()
             data['options']['alignment']['refcat']=str(p if p.is_absolute() else path.parent/p)
+        for options in [data.get('options',{}),*data.get('filter_overrides',{}).values()]:
+            value=options.get('calibration',{}).get('directory')
+            if value:
+                p=Path(value).expanduser();options['calibration']['directory']=str(p if p.is_absolute() else path.parent/p)
         for override in data.get('filter_overrides',{}).values():
             value=override.get('alignment',{}).get('refcat')
             if value:

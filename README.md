@@ -49,8 +49,9 @@ observations/
 ```
 
 Place inputs directly in each raw directory, retaining their MAST filenames.
-Calibration references must match the observations; none are bundled with the
-package. Paths in YAML are relative to that YAML file. Command-line paths are
+Calibration references must match the observations. UVIS and STIS automatically
+retrieve missing header-named files through HST CRDS and reuse local copies. See
+[reference locations and offline settings](docs/INSTALLATION.md#download-calibration-references). Paths in YAML are relative to that YAML file. Command-line paths are
 relative to the current directory.
 
 ## Reduce UVIS images

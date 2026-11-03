@@ -1,6 +1,7 @@
 """Validated UVIS stage settings; detector calibration is never rerun."""
 from .astrometry.config import DEFAULTS as ASTROMETRY_DEFAULTS
-DEFAULTS=dict(execution=dict(target_workers=1,filter_workers=1),astrometry=ASTROMETRY_DEFAULTS,background=dict(mode='auto',threshold=2.5,dilate=8,target_radius=3.0,min_blank=0.2,
+from ..common.calibration import DEFAULTS as CALIBRATION_DEFAULTS
+DEFAULTS=dict(calibration=CALIBRATION_DEFAULTS,execution=dict(target_workers=1,filter_workers=1),astrometry=ASTROMETRY_DEFAULTS,background=dict(mode='auto',threshold=2.5,dilate=8,target_radius=3.0,min_blank=0.2,
     min_pixels=1000,significance=3.0,box_size=128,user={},amplifier_correction=False,amplifier_assess=False,dq_ignore_bits=0,source_fills_field=False),
     alignment=dict(mode='auto',minobj=10,max_rms=0.3,max_shift=10.0,fitgeometry='shift',max_sources=1000),
     drizzle=dict(final_scale=0.04,final_pixfrac=0.8,final_kernel='square',final_wht_type='EXP',
@@ -22,6 +23,11 @@ def settings(options):
     for section,extra in (('background',set()),('alignment',{'refcat','transformations'})):
         invalid=set(out[section])-set(DEFAULTS[section])-extra
         if invalid:raise ValueError(f'Unknown {section} settings: {invalid}')
+    calibration=out['calibration']
+    if set(calibration)-set(CALIBRATION_DEFAULTS):raise ValueError('Unknown calibration settings')
+    if any(type(calibration[k]) is not bool for k in ('auto_download','offline')):raise ValueError('Calibration switches must be boolean')
+    if not isinstance(calibration['timeout'],(int,float)) or not 0<calibration['timeout']<=600:raise ValueError('Calibration timeout must be in (0,600] seconds')
+    if type(calibration['retries']) is not int or not 0<=calibration['retries']<=3:raise ValueError('Calibration retries must be an integer from 0 to 3')
     if out['alignment']['minobj']<3:raise ValueError('At least three matches are required')
     if out['background']['box_size']<8 or out['background']['dilate']<1 or out['background']['target_radius']<0:raise ValueError('Invalid sky mask geometry')
     if out['background']['mode'] not in ('auto','constant','2d','none','user'):raise ValueError('Invalid background mode')

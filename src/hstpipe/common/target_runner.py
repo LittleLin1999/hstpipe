@@ -67,6 +67,8 @@ def run_uvis(config,engine,dry_run=False,_retry_anchors=True,_retry_group=None,_
         inherited=yaml.safe_load(existing.read_text()).get('filter_overrides',{}) if existing.exists() else {}
         override=merge(inherited.get(filt,{}),config.filter_overrides.get(filt,{}))
         options=settings(merge(config.options,override))
+        # Resolve the shared reference directory before checking cached stages.
+        options['calibration']['directory']=str(Path(options['calibration']['directory'] or os.environ.get('iref') or Path(config.output).parent/'calibration/uvis').expanduser().resolve())
         effective=replace(config,options=options,target=target,element=filt,setup=config.setup or setup)
         paths=ReductionPaths(Path(config.output),target,'uvis',filt,effective.setup)
         if dry_run:

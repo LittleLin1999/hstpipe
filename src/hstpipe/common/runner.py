@@ -31,6 +31,10 @@ def run(config,engine,dry_run=False):
         paths=ReductionPaths(Path(config.output),target,config.instrument,element,config.setup or (setup if config.instrument=='uvis' else None))
         plan=dict(inputs=[str(e.path) for e in rows],output=str(paths.directory),configuration=config.effective())
         if dry_run:outputs.append(plan);continue
+        existed_before=paths.directory.exists()
+        from .calibration import ensure_references
+        calibration=ensure_references([e.path for e in rows],config,paths)
+        config.options['reference_dir']=calibration['directory']
         cache=StageCache(paths.directory/'.cache')
         options=config.effective();options.pop('force');options.pop('resume')
         code=list((Path(__file__).parents[1]/config.instrument).glob('*.py'))
@@ -51,7 +55,7 @@ def run(config,engine,dry_run=False):
         run_exposures=rows if config.instrument=='uvis' else exposures
         key=cache.key([e.path for e in run_exposures]+code+refs+native,dict(config=options,versions=versions()))
         if config.resume and not config.force and cache.valid('reduction',key):outputs.append(paths.directory);continue
-        if paths.directory.exists() and (config.force or not config.resume):
+        if existed_before and (config.force or not config.resume):
             if not config.force:raise FileExistsError('Existing or stale reduction; choose --resume with matching cache or --force')
             # Preserve prior run for review, rather than overwrite or delete it.
             import time
@@ -62,21 +66,23 @@ def run(config,engine,dry_run=False):
         (paths.directory/'config.yaml').write_text(yaml.safe_dump(config.effective(),sort_keys=False))
         inputs=[identity(e.path) for e in run_exposures]
         manifest=paths.directory/'manifest.json'
-        write_manifest(manifest,status='running',inputs=inputs,configuration=config.effective())
+        write_manifest(manifest,status='running',inputs=inputs,configuration=config.effective(),calibration_references=calibration)
         try:
+            from dataclasses import replace
+            engine_config=replace(config,options={k:v for k,v in config.options.items() if k!='calibration'})
             with stage_log(paths.area("logs")/"stages.log"):
-                products=engine(config,paths,rows)
+                products=engine(engine_config,paths,rows)
             if [identity(e.path) for e in run_exposures]!=inputs:raise RuntimeError('Original observations changed')
             scientific={}
             if config.instrument=='uvis' and (paths.area('diagnostics','drizzle')/'qa_summary.json').exists():
                 scientific=json.loads((paths.area('diagnostics','drizzle')/'qa_summary.json').read_text())
             write_manifest(manifest,status='complete',scientific_assessment=scientific,inputs=inputs,configuration=config.effective(),
-                products=[identity(p) for p in products],calibration=[identity(p) for p in refs],
+                products=[identity(p) for p in products],calibration=[identity(p) for p in refs],calibration_references=calibration,
                 native_software=[identity(p) for p in native],
                 validation_files=[str(p.relative_to(paths.directory)) for p in paths.area("diagnostics").rglob("*.json")])
             artifacts=[p for p in paths.directory.rglob('*') if p.is_file() and '.cache' not in p.parts and 'logs' not in p.parts and '.previous' not in p.parts]
             cache.record('reduction',key,artifacts);log.info('Complete: %s',products)
             outputs.append(paths.directory)
         except Exception as exc:
-            write_manifest(manifest,status='failed',inputs=inputs,configuration=config.effective(),error=str(exc));log.exception('Reduction failed');raise
+            write_manifest(manifest,status='failed',inputs=inputs,configuration=config.effective(),calibration_references=calibration,error=str(exc));log.exception('Reduction failed');raise
     return outputs

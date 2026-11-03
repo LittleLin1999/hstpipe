@@ -198,3 +198,34 @@ def test_human_review_cannot_waive_unrelated_or_stale_failures(pending_human_rev
     save(paths.directory/'manifest.json',state)
     with pytest.raises(ValueError):approve_source_review(paths.directory,'F275W',reviewer='Human reviewer',reason='Accept field-source flux only',source_ids=['Gfield'],expected_sha256=sha)
     assert not paths.product('drc').exists()
+
+
+@pytest.mark.parametrize('problem',[None,'changed','missing_identity','astrometry'])
+def test_user_review_command_keeps_checksum_internal(pending_human_review,problem,capsys):
+    from astropy.io import fits
+    from hstpipe.common.provenance import identity
+    from hstpipe.common.target_runner import save
+    from hstpipe.cli import main
+    paths,review,raw,state=pending_human_review
+    record=state['filters']['F275W'];record['artifacts']=[identity(review)]
+    if problem=='missing_identity':record['artifacts']=[]
+    if problem=='astrometry':record['scientific_assessment']['astrometry']['final_validation']['status']='unvalidated'
+    save(paths.directory/'manifest.json',state)
+    if problem=='changed':
+        with fits.open(review,mode='update') as hd:hd['SCI'].data[0,0]+=1
+    args=['uvis','review','--directory',str(paths.directory),'--filter','F275W']
+    if problem in ('changed','missing_identity'):
+        with pytest.raises(ValueError):main(args+['--approve','--reviewer','User','--reason','Accept field-source flux discrepancy'])
+        assert not paths.product('drc').exists()
+        return
+    main(args)
+    assert 'Preview only' in capsys.readouterr().out and not paths.product('drc').exists()
+    if problem=='astrometry':
+        with pytest.raises(ValueError):main(args+['--approve','--reviewer','User','--reason','Accept field-source flux discrepancy'])
+        assert not paths.product('drc').exists()
+    else:
+        before=identity(raw)
+        main(args+['--approve','--reviewer','User','--reason','Accept field-source aperture discrepancy'])
+        assert 'Published:' in capsys.readouterr().out
+        assert identity(raw)==before
+        assert fits.getheader(paths.product('drc'))['HPQASTAT']=='REVIEWED'

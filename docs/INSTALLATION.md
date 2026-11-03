@@ -96,6 +96,117 @@ installation prefix. Wheel users install the desired extras, then run that
 installed `hstcal/build.sh` separately. `setup.sh` and `requirements.txt` are
 source-checkout entry points and are included in source distributions.
 
+## Download calibration references
+
+**UVIS and STIS reductions automatically download missing header-named calibration
+references through HST CRDS.** Existing local files are reused. Setup installs the
+CRDS client with either instrument extra; it does not download reference data
+until a reduction needs them. A dry run never starts downloads.
+
+The pipeline preserves the filenames and calibration versions recorded in your
+input headers. It does not run `bestrefs`, rewrite original FITS headers, or
+rerun calwf3. Gaia/Legacy catalogs are separate from calibration references.
+
+By default, UVIS uses `iref`; STIS uses `options.reference_dir` or `oref`. If no
+location is configured, files go into `calibration/uvis/` or `calibration/stis/`
+next to the selected output root (normally `redux/`). For runs in a custom
+location, explicitly set a shared directory to avoid duplicate caches:
+
+```yaml
+options:
+  calibration:
+    directory: ../calibration/uvis  # Use ../calibration/stis for STIS
+    auto_download: true
+    offline: false
+    timeout: 120                    # seconds per attempt
+    retries: 1
+```
+
+Paths are relative to the YAML file. For STIS, an explicit `reference_dir` and
+`calibration.directory` must agree. `offline: true` (or `auto_download: false`)
+allows reuse of local references but prevents network access. A missing required
+file stops the affected reduction with its filename and reason. An unavailable
+optional UVIS MDRIZTAB produces a warning instead.
+
+Downloads use per-file locks, temporary files, FITS verification, and atomic
+installation. Existing files are not overwritten automatically. Each group has
+a reference receipt in `logs/` recording header values, file identities, reuse or
+download status, and failures. UVIS also includes the record in scientific QA;
+STIS includes it in the manifest. Original data directories are never download
+destinations. Missing references expressed as absolute paths must be restored at
+those paths rather than silently redirected.
+
+### Where to get them manually
+
+- [HST CRDS](https://hst-crds.stsci.edu/) provides the official calibration
+  reference files. Search for the exact filename recorded in your exposure.
+- [MAST HST search](https://mast.stsci.edu/search/ui/#/hst) also offers reference
+  files with dataset downloads. See the [STScI retrieval instructions](https://hst-docs.stsci.edu/hstdhb/1-obtaining-hst-data/1-3-calibration-reference-data).
+
+For reproducible reduction of existing calibrated data, start with the versions
+named in those FITS headers. Selecting newer references is a separate calibration
+decision; do not silently change raw headers or rerun calwf3 on UVIS FLCs.
+
+### Find the filenames
+
+From your observations directory, this read-only example lists references for
+one UVIS exposure. Change the filename to your own; repeat for each input because
+reference versions can differ:
+
+```python
+from astropy.io import fits
+
+header = fits.getheader("raw/uvis/EXPOSURE_flc.fits")
+for key in ("IDCTAB", "NPOLFILE", "D2IMFILE", "MDRIZTAB", "CCDTAB", "PFLTFILE"):
+    print(key, header.get(key, "not specified"))
+```
+
+UVIS preparation checks `IDCTAB`, `NPOLFILE`, `D2IMFILE`, `CCDTAB`, and
+`MDRIZTAB`; `PFLTFILE` is included when amplifier assessment/correction is enabled.
+`IDCTAB`, `NPOLFILE`, and `D2IMFILE` identify WFC3 distortion references;
+see [the WFC3 handbook](https://hst-docs.stsci.edu/wfc3dhb/chapter-4-wfc3-images-distortion-correction-and-astrodrizzle/4-2-distortion-corrections-and-image-combination).
+MDRIZTAB supplies recommended drizzle settings; PFLTFILE is needed for optional
+amplifier equalization. This is a useful starting list, not a universal list of
+all files required by every native task. Do not download `N/A` or blank entries.
+
+For STIS, preparation collects FITS references from `oref$...` values and
+FILE/TAB keywords in the input primary headers.
+The reduction uses tables including PHOTTAB, TDSTAB, and APDESTAB; native HSTCAL
+control generation can require additional references. Use each exposure's
+headers and any missing-file error to identify them, rather than a fixed list.
+
+### Download by filename and set the paths
+
+Save manually downloaded UVIS files in `calibration/uvis/` and STIS files in
+`calibration/stis/`. Keep their original filenames. Alternatively, the supported
+[CRDS sync tool](https://hst-crds.stsci.edu/static/users_guide/command_line_tools.html#crds-sync)
+can download an explicit list:
+
+```bash
+python -m pip install crds          # Only if the CRDS client is not installed
+export CRDS_SERVER_URL=https://hst-crds.stsci.edu
+export CRDS_PATH="$PWD/calibration/crds-cache"
+mkdir -p calibration/uvis calibration/stis
+export iref="$PWD/calibration/uvis/"
+export oref="$PWD/calibration/stis/"
+
+# Replace these placeholders with header filenames, omitting iref$/oref$.
+python -m crds.sync --hst --files UVIS_REFERENCE.fits --output-dir "$iref"
+python -m crds.sync --hst --files STIS_REFERENCE.fits --output-dir "$oref"
+```
+
+Supply multiple filenames after `--files` when needed. These explicit downloads
+do not edit the exposure headers. Keep the trailing `/` on `iref` and `oref`.
+If using an existing CRDS cache instead, point to the directory that actually
+contains the files; cache layouts can differ.
+
+In STIS YAML, also set `options.reference_dir: ../calibration/stis` when the YAML
+is under `configs/`. UVIS uses `iref` for header references with that prefix.
+Verify that a header's `iref$name.fits` or `oref$name.fits` resolves to an existing
+file before reducing. References are reusable offline once downloaded. Missing
+required references can stop the stage that needs them; a successful `--dry-run`
+is not a complete calibration-reference check.
+
 ## Verify and troubleshoot
 
 After full setup:

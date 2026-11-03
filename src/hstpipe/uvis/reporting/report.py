@@ -102,14 +102,15 @@ def _source_validation_summary(record):
     if not q:return ''
     rows=[]
     for source in q.get('sources',[]):
-        aperture=next((a for a in source.get('apertures',[]) if a.get('radius_pix')==5),{})
+        apertures=source.get('apertures',[])
+        aperture=next((a for a in apertures if a.get('status')=='review_required'),next((a for a in apertures if a.get('radius_pix')==5),{}))
         before=source.get('before') or {};after=source.get('after') or {}
         def num(x):return '—' if x is None else f'{x:.4f}'
-        values=(source.get('source_id'),len(source.get('observations',[])),source.get('status'),
+        values=(source.get('source_id'),len(source.get('observations',[])),source.get('status'),num(aperture.get('radius_pix')),
             num(1-aperture['loss_fraction']) if aperture.get('loss_fraction') is not None else '—',num(aperture.get('loss_significance')),
             num(before.get('fwhm_pix'))+' / '+num(after.get('fwhm_pix')),num(source.get('core_weight_ratio')))
         rows.append('<tr>'+''.join('<td>'+_escape(v)+'</td>' for v in values)+'</tr>')
-    return '<h3>Persistent-source and CR validation: '+_escape(q.get('status'))+'</h3><p>Independent no-CR input drizzles share the exact final grid. Aperture flux, morphology and WHT are compared using empirical input scatter. Raw high pixels and background-area CR fractions mix real transients with astronomical emission and do not establish lost stellar flux. These checks do not relax the CR parameters or manufacture source pixels.</p><div class="scroll"><table><tr>'+''.join('<th>'+x+'</th>' for x in ('HST source','Measured exposures','Decision','Final / reference flux (5-pixel radius)','Deficit significance','FWHM reference / final (pixels)','Core / local WHT'))+'</tr>'+''.join(rows)+'</table></div>'
+    return '<h3>Persistent-source and CR validation: '+_escape(q.get('status'))+'</h3><p>Independent no-CR input drizzles share the exact final grid. Aperture flux, morphology and WHT are compared using empirical input scatter. Raw high pixels and background-area CR fractions mix real transients with astronomical emission and do not establish lost stellar flux. These checks do not relax the CR parameters or manufacture source pixels.</p><div class="scroll"><table><tr>'+''.join('<th>'+x+'</th>' for x in ('HST source','Measured exposures','Decision','Aperture radius (pixels)','Final / reference flux','Deficit significance','FWHM reference / final (pixels)','Core / local WHT'))+'</tr>'+''.join(rows)+'</table></div>'
 
 
 def _summary(key,record,workflow_error=None,astrometry_context=None):
@@ -240,7 +241,7 @@ def generate_report(directory):
         if not state.get('workflow_error'):contexts[key]=context(group_paths,record)
     ready=bool(filters) and all(r.get('products') and r.get('scientific_assessment',{}).get('status')=='science_ready' for r in filters.values())
     title=state['target']+' UVIS reduction'
-    from .decisions import ready as filter_ready,overview_row,concise_filter,decision
+    from .decisions import ready as filter_ready,overview_row,concise_filter,decision,image_review_section
     count=sum(filter_ready(r) for r in filters.values())
     css="""body{font:16px -apple-system,BlinkMacSystemFont,Segoe UI,system-ui,sans-serif;max-width:1050px;margin:36px auto;padding:0 20px;color:oklch(25% .015 250);background:oklch(99% .005 250)}h1{font-size:1.7rem;line-height:1.25}h2{font-size:1.3rem;margin-top:2rem}h3{font-size:1.1rem}p,li{max-width:74ch;line-height:1.55}a{color:oklch(42% .13 250)}table{border-collapse:collapse;width:100%;font-size:.9rem}td,th{padding:10px 12px;border-bottom:1px solid oklch(87% .01 250);text-align:left;vertical-align:top}th{background:oklch(95% .008 250);font-weight:600}td{overflow-wrap:anywhere}td>a{white-space:nowrap}.scroll{overflow:auto}summary{cursor:pointer;font-weight:600;line-height:1.5}summary:focus-visible,a:focus-visible{outline:2px solid oklch(45% .13 250);outline-offset:3px}details{margin:14px 0}.filter{padding:14px 0;border-top:1px solid oklch(82% .01 250)}.filter>summary{font-size:1.15rem}.technical{background:oklch(96% .005 250);padding:12px}.muted,figcaption{color:oklch(45% .015 250);font-size:.85rem}.pass{color:oklch(38% .09 155)}.attention{color:oklch(42% .12 45)}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.8rem;padding:12px}img{max-width:100%;height:auto}figure{margin:20px 0}.offset-plot{max-width:640px}.offset-plot svg{width:100%;height:auto}code{overflow-wrap:anywhere}@media(max-width:650px){body{margin:20px auto;padding:0 12px}td,th{padding:8px 6px}h1{font-size:1.4rem}}"""
     head='<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>'+_escape(title)+'</title><style>'+css+'</style><body><h1>'+_escape(title)+'</h1>'
@@ -252,6 +253,7 @@ def generate_report(directory):
             status,why,action=decision(r)
             attention.append('<li><strong>'+_escape(k)+':</strong> '+_escape(why)+' '+_escape(action)+'</li>')
     if attention:head+='<h2>Needs attention</h2><ul>'+''.join(attention)+'</ul>'
+    head+=image_review_section(filters)
     if state.get('workflow_error'):head+='<p><strong>Workflow error:</strong> '+_escape(state['workflow_error'])+'</p>'
     detail_heading='<h2>Filter details</h2><p class="muted">Expand a filter to see its sources, applied offsets and WCS. Full diagnostic tables are inside Technical details.</p>'
     body=''.join(concise_filter(k,r,contexts.get(k,{}),_summary(k,r,state.get('workflow_error'),contexts.get(k)).replace(' id="filter-'+_escape(k)+'"','')) for k,r in sorted(filters.items()))

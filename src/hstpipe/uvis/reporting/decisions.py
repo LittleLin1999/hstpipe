@@ -35,6 +35,42 @@ def decision(record):
     return 'Review required','No science-ready product was recorded for this run.','Inspect the failed or incomplete stage below.'
 
 
+
+def image_review_section(filters):
+    """Visible review instructions from actual failed source checks, not fit status."""
+    sections=[]
+    for key,record in sorted(filters.items()):
+        a=record.get('scientific_assessment',{});q=a.get('source_validation',{})
+        failed=[source for source in q.get('sources',[]) if source.get('status')=='review_required']
+        if q.get('status')!='review_required' and not failed:continue
+        image=a.get('unvalidated_final') or ''
+        if isinstance(image,dict):image=image.get('path','')
+        text='<h3>'+esc(key)+'</h3>'
+        if image:text+='<p><strong>File to inspect:</strong> <code>'+esc(str(image).split('/')[-1])+'</code> — SCI and WHT extensions.</p>'
+        rows=[]
+        for source in failed:
+            x,y=source.get('output_x'),source.get('output_y')
+            position=number(x+1,2)+', '+number(y+1,2) if x is not None and y is not None else 'Not recorded'
+            apertures=[v for v in source.get('apertures',[]) if v.get('status')=='review_required']
+            measurements=[]
+            for v in apertures:
+                loss=v.get('loss_fraction');delta=number(100*loss,2)+'% lower flux' if loss is not None else 'Flux difference not measured'
+                measurements.append(number(v.get('radius_pix'),1)+'-pixel radius: '+delta+'; '+number(v.get('loss_significance'),2)+'σ')
+            reasons={'significant_persistent_source_flux_loss':'Source flux deficit',
+                     'persistent_source_broadening':'Source broadening',
+                     'source_centroid_inconsistency':'Centroid disagreement'}
+            cause='; '.join(reasons.get(v,str(v).replace('_',' ')) for v in source.get('failures',[]))
+            if not measurements:measurements=[cause or 'See source QA details']
+            agreeing=[number(v.get('radius_pix'),1) for v in source.get('apertures',[]) if v.get('status')=='consistent']
+            note=('Other aperture radii agreeing within uncertainty: '+', '.join(agreeing)+' pixels.') if agreeing else 'No agreeing aperture recorded.'
+            rows.append([esc(source.get('source_id','Unknown')),esc(position),esc(cause),esc('; '.join(measurements)),esc(note)])
+        text+=table(('Flagged source','SCI X, Y (1-based)','Reason','Failed measurement','Other apertures'),rows) if rows else '<p>No per-source failure details were recorded; inspect the saved QA diagnostics.</p>'
+        text+='<p><strong>What to inspect:</strong> Locate the source at the SCI position above. Compare its core in the individual exposures, independent no-CR reference, final SCI and WHT. Inspect CR masks for rejection of real source pixels, residual cosmic rays or source broadening.</p>'
+        text+='<p><strong>Decision:</strong> These are review images, not validated science products. A flux discrepancy alone does not prove CR overrejection: sampling and median-versus-weighted-combination differences also matter. Resolve the flagged measurement before precision photometry; do not change the validation flag by hand.</p>'
+        sections.append(text)
+    return '<section class="review-required"><h2>Human review required — inspect these sources</h2>'+''.join(sections)+'</section>' if sections else ''
+
+
 def overview_row(key,record):
     a=record.get('scientific_assessment',{});rel=a.get('relative_astrometry',a.get('alignment',{}));ab=a.get('astrometry',{});v=ab.get('final_validation') or {}
     state,why,action=decision(record)

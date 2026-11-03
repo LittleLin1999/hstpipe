@@ -36,7 +36,7 @@ def decision(record):
 
 
 
-def image_review_section(filters):
+def image_review_section(filters,figures=None):
     """Visible review instructions from actual failed source checks, not fit status."""
     sections=[]
     for key,record in sorted(filters.items()):
@@ -65,6 +65,7 @@ def image_review_section(filters):
             note=('Other aperture radii agreeing within uncertainty: '+', '.join(agreeing)+' pixels.') if agreeing else 'No agreeing aperture recorded.'
             rows.append([esc(source.get('source_id','Unknown')),esc(position),esc(cause),esc('; '.join(measurements)),esc(note)])
         text+=table(('Flagged source','SCI X, Y (1-based)','Reason','Failed measurement','Other apertures'),rows) if rows else '<p>No per-source failure details were recorded; inspect the saved QA diagnostics.</p>'
+        for source in failed:text+=(figures or {}).get((key,str(source.get('source_id',''))),'')
         text+='<p><strong>What to inspect:</strong> Locate the source at the SCI position above. Compare its core in the individual exposures, independent no-CR reference, final SCI and WHT. Inspect CR masks for rejection of real source pixels, residual cosmic rays or source broadening.</p>'
         text+='<p><strong>Decision:</strong> These are review images, not validated science products. A flux discrepancy alone does not prove CR overrejection: sampling and median-versus-weighted-combination differences also matter. Resolve the flagged measurement before precision photometry; do not change the validation flag by hand.</p>'
         sections.append(text)

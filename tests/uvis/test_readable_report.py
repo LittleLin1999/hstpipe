@@ -46,3 +46,31 @@ def test_failed_aperture_and_source_are_visible_before_collapsed_details(tmp_pat
     assert 'Aperture radius (pixels)' in text
     assert json.loads((p.directory/'manifest.json').read_text())['filters']['F336W']==record
     assert report.stat().st_size<1_000_000
+
+
+def test_review_figure_is_embedded_and_saved_pixels_unchanged(tmp_path):
+    import numpy as np
+    from astropy.io import fits
+    from hstpipe.uvis.reporting.report import _review_figures
+    y,x=np.indices((77,77));star=np.exp(-((x-38.2)**2+(y-37.8)**2)/4)
+    hd=[fits.PrimaryHDU()]
+    for name,offset in [('INPUT',1.),('INPUT',2.),('MEDIAN',0.),('FINAL',1.),('WHT',0.)]:
+        a=np.ones_like(star)*100 if name=='WHT' else star+offset
+        h=fits.ImageHDU(a,name=name);h.header['SOURCEID']='Gtest';h.header['EXPOSURE']='exposure_flc.fits';hd.append(h)
+    path=tmp_path/'cutouts.fits';fits.HDUList(hd).writeto(path);original=path.read_bytes()
+    source=dict(source_id='Gtest',status='review_required',output_x=38.2,output_y=37.8,apertures=[dict(radius_pix=2.5,status='review_required')])
+    records={'F336W':dict(scientific_assessment=dict(source_validation=dict(cutouts=str(path),sources=[source])))}
+    figures,count=_review_figures(records,220_000);fragment=figures['F336W','Gtest']
+    assert count==1 and 'data:image/jpeg;base64,' in fragment
+    assert '2 of 2 individual exposures' in fragment and 'not raw detector panels' in fragment
+    assert 'same brightness stretch' in fragment and 'not an error-significance map' in fragment
+    assert len(fragment.encode())<=220_000 and path.read_bytes()==original
+    limited,n=_review_figures(records,1)
+    assert n==0 and 'budget exhausted' in limited['F336W','Gtest']
+
+
+def test_review_missing_cutouts_remain_explicit():
+    from hstpipe.uvis.reporting.report import _review_figures
+    records={'F336W':dict(scientific_assessment=dict(source_validation=dict(cutouts='/missing/qa.fits',sources=[dict(source_id='Gtest',status='review_required')])))}
+    figures,count=_review_figures(records,220_000)
+    assert count==0 and 'Review figure unavailable' in figures['F336W','Gtest']

@@ -229,6 +229,95 @@ def _figures(paths,filters,budget=650_000,descriptions=None):
         if len(chosen)>=3:break
     return chosen
 
+
+def _review_figure(cutfile,source,key):
+    """Plot existing QA stamps only; no new registration, photometry or QA decision."""
+    import numpy as np
+    from astropy.io import fits
+    from astropy.visualization import ImageNormalize,AsinhStretch
+    from matplotlib.figure import Figure
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    from matplotlib.patches import Circle
+    from ..source_qa import _sky
+    sid=str(source['source_id'])
+    with fits.open(cutfile) as hd:
+        stamps=[(h.name,h.header.get('EXPOSURE',''),np.array(h.data,dtype=float,copy=True))
+                for h in hd if h.header.get('SOURCEID')==sid and h.data is not None]
+    inputs=[(label,a) for name,label,a in stamps if name=='INPUT']
+    arrays={name:a for name,_,a in stamps if name!='INPUT'}
+    if not inputs or not all(k in arrays for k in ('MEDIAN','FINAL','WHT')):raise ValueError('Required saved source panels are missing')
+    ref,final,weight=(arrays[k] for k in ('MEDIAN','FINAL','WHT'))
+    if any(a.shape!=ref.shape for _,a in inputs) or final.shape!=ref.shape or weight.shape!=ref.shape:raise ValueError('Saved panels do not share a grid')
+    ny,nx=ref.shape;x=float(source['output_x']);y=float(source['output_y'])
+    cx=(nx-1)/2+x-round(x);cy=(ny-1)/2+y-round(y)
+    yy,xx=np.indices(ref.shape);rr=(xx-cx)**2+(yy-cy)**2;ann=(rr>=12**2)&(rr<=17**2)
+    # MEDIAN is already sky-subtracted by the original QA. Other saved panels
+    # retain sky; estimate it using the same annulus solely for this display.
+    shown=[(label,a-_sky(a,ann&np.isfinite(a))) for label,a in inputs[:8]]
+    final=final-_sky(final,ann&(weight>0)&np.isfinite(final))
+    values=ref[np.isfinite(ref)&(rr<=12**2)]
+    if not len(values):raise ValueError('No finite reference pixels near the source')
+    low,high=float(np.percentile(values,5)),float(np.max(values))
+    if high<=low:high=low+1
+    norm=ImageNormalize(vmin=low,vmax=high,stretch=AsinhStretch(.08),clip=True)
+    rows=int(np.ceil(len(shown)/4))+1;fig=Figure(figsize=(11,2.7*rows),layout='constrained');FigureCanvasAgg(fig)
+    axes=fig.subplots(rows,4,squeeze=False);extent=(-.5-cx,nx-.5-cx,-.5-cy,ny-.5-cy)
+    failing=next((a for a in source.get('apertures',[]) if a.get('status')=='review_required'),{})
+    radius=float(failing.get('radius_pix',2.5))
+    def panel(ax,a,title,**kwargs):
+        im=ax.imshow(np.ma.masked_invalid(a),origin='lower',extent=extent,interpolation='nearest',**kwargs)
+        ax.set(xlim=(-12,12),ylim=(-12,12),title=title,xticks=[-10,0,10],yticks=[-10,0,10])
+        ax.tick_params(labelsize=7);ax.title.set_fontsize(9)
+        ax.plot(0,0,marker='+',color='cyan',markersize=10,markeredgewidth=.8)
+        ax.add_patch(Circle((0,0),radius,fill=False,edgecolor='orange',linewidth=.8))
+        return im
+    for ax in axes[:-1].flat:ax.set_visible(False)
+    for ax,(label,a) in zip(axes[:-1].flat,shown):
+        ax.set_visible(True);panel(ax,a,label.removesuffix('_flc.fits')+'\nIndividual exposure · no CR',cmap='gray',norm=norm)
+    panel(axes[-1,0],ref,'No-CR median reference',cmap='gray',norm=norm)
+    image=panel(axes[-1,1],final,'Final SCI (production CR masks)',cmap='gray',norm=norm)
+    cb=fig.colorbar(image,ax=axes[-1,:2].tolist(),shrink=.65,pad=.02,ticks=norm.inverse(np.linspace(0,1,4)),format='%.2g');cb.set_label('Shared SCI stretch · electrons/s',fontsize=8);cb.ax.tick_params(labelsize=7)
+    diff=final-ref;v=diff[np.isfinite(diff)&(rr<=radius**2)];limit=max(float(np.max(np.abs(v))) if len(v) else 0,1e-12)
+    im=panel(axes[-1,2],diff,'Final minus reference\nBlue: lower final flux',cmap='RdBu_r',vmin=-limit,vmax=limit)
+    cb=fig.colorbar(im,ax=axes[-1,2],shrink=.65,pad=.02);cb.set_label('Difference · electrons/s',fontsize=8);cb.ax.tick_params(labelsize=7)
+    w=weight[np.isfinite(weight)&(rr<=12**2)];wmax=float(np.max(w)) if len(w) else 1.
+    im=panel(axes[-1,3],weight,'WHT coverage\nDark: lower weight',cmap='viridis',vmin=0,vmax=max(wmax,1e-12))
+    cb=fig.colorbar(im,ax=axes[-1,3],shrink=.65,pad=.02);cb.set_label('Recorded WHT values',fontsize=8);cb.ax.tick_params(labelsize=7)
+    fig.suptitle(key+' · '+sid+' · source requiring review',fontsize=12)
+    fig.supxlabel('Offset from fixed source position (output pixels) · cyan cross: reference · orange circle: flagged aperture',fontsize=9)
+    stream=io.BytesIO();fig.savefig(stream,format='jpeg',dpi=110,pil_kwargs={'quality':78,'optimize':True});fig.clear()
+    caption=(key+' — '+sid+'. '+str(len(shown))+' of '+str(len(inputs))+' individual exposures shown, separately drizzled without AstroDrizzle CR masking onto the final grid; these are not raw detector panels. '
+             'All SCI panels use the same brightness stretch and display sky removal. The '+str(radius)+'-pixel-radius circle marks the flagged aperture. '
+             'Difference and WHT use separate labelled scales; the difference is not an error-significance map. Inspect missing core light, elongation and weight holes. '
+             'The median reference and weighted final image can differ through sampling; this figure does not by itself prove CR overrejection.')
+    return stream.getvalue(),caption
+
+
+def _review_figures(filters,budget):
+    """Give failed-source figures priority in the bounded, offline HTML budget."""
+    output={};count=0
+    for key,record in sorted(filters.items()):
+        q=record.get('scientific_assessment',{}).get('source_validation',{})
+        for source in q.get('sources',[]):
+            if source.get('status')!='review_required':continue
+            sid=str(source.get('source_id',''));ident=(key,sid)
+            try:
+                from PIL import Image
+                raw,caption=_review_figure(q.get('cutouts',''),source,key)
+                fragment=''
+                for width,quality in ((1210,78),(1000,65),(850,55)):
+                    with Image.open(io.BytesIO(raw)) as im:
+                        im.thumbnail((width,1100));buf=io.BytesIO();im.save(buf,format='JPEG',quality=quality,optimize=True)
+                    fragment='<figure class="source-review"><img alt="'+_escape(key+' '+sid+' source review panels')+'" src="data:image/jpeg;base64,'+base64.b64encode(buf.getvalue()).decode('ascii')+'"><figcaption>'+_escape(caption)+'</figcaption></figure>'
+                    if len(fragment.encode())<=budget:break
+                size=len(fragment.encode())
+                if size>budget:raise ValueError('Image budget exhausted; numerical review measurements retained')
+                output[ident]=fragment;count+=1;budget-=size
+            except (OSError,ValueError,KeyError,ImportError) as exc:
+                output[ident]='<p class="muted">Review figure unavailable: '+_escape(str(exc))+'</p>'
+    return output,count
+
+
 def generate_report(directory):
     directory=Path(directory);statefile=directory/'manifest.json'
     state=json.loads(statefile.read_text())
@@ -253,11 +342,14 @@ def generate_report(directory):
             status,why,action=decision(r)
             attention.append('<li><strong>'+_escape(k)+':</strong> '+_escape(why)+' '+_escape(action)+'</li>')
     if attention:head+='<h2>Needs attention</h2><ul>'+''.join(attention)+'</ul>'
-    head+=image_review_section(filters)
+    review_text=image_review_section(filters)
+    head+=review_text
     if state.get('workflow_error'):head+='<p><strong>Workflow error:</strong> '+_escape(state['workflow_error'])+'</p>'
     detail_heading='<h2>Filter details</h2><p class="muted">Expand a filter to see its sources, applied offsets and WCS. Full diagnostic tables are inside Technical details.</p>'
     body=''.join(concise_filter(k,r,contexts.get(k,{}),_summary(k,r,state.get('workflow_error'),contexts.get(k)).replace(' id="filter-'+_escape(k)+'"','')) for k,r in sorted(filters.items()))
     tail='<footer><p class="muted">Offline report from saved pipeline results. Refreshing it does not rerun a reduction. Fit-source scatter is not an independent absolute-accuracy measurement; drizzled noise is correlated.</p></footer></body></html>'
+    review_images,review_count=_review_figures(filters,min(220_000,max(0,LIMIT-len((head+body+tail).encode('utf-8'))-8192)))
+    if review_text:head=head.replace(review_text,image_review_section(filters,review_images),1)
     descriptions={}
     for key,ctx in contexts.items():
         for row in ctx['associations']:
@@ -282,7 +374,7 @@ def generate_report(directory):
     if len(data)>=LIMIT:raise ValueError('Report essential text exceeds strict 1 MB limit')
     output=paths.report();output.parent.mkdir(parents=True,exist_ok=True)
     temp=output.with_suffix('.html.tmp');temp.write_bytes(data);os.replace(temp,output)
-    state['report']=dict(path=str(output),bytes=len(data),limit_bytes=LIMIT,self_contained=True,embedded_figures=len(figures)+comparison_count,alignment_source_pairs=comparison_count,astrometric_details_embedded=True,science_readiness='ready' if ready else 'review_required')
+    state['report']=dict(path=str(output),bytes=len(data),limit_bytes=LIMIT,self_contained=True,embedded_figures=len(figures)+comparison_count+review_count,review_source_figures=review_count,alignment_source_pairs=comparison_count,astrometric_details_embedded=True,science_readiness='ready' if ready else 'review_required')
     save(statefile,state)
     return output
 

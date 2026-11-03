@@ -15,7 +15,20 @@ from ..common.provenance import identity,versions
 from .astrometry.wcs import detector_wcs
 from .drizzle import drizzle
 
-VERSION='persistent-source-2'
+VERSION='persistent-source-3'
+
+
+def _diagnostic_copy(source,destination,paths):
+    """Keep SCI untouched and remove only AstroDrizzle CR flags for no-CR QA."""
+    from drizzlepac.resetbits import reset_dq_bits
+    from .dq import native_compatible_dq
+    paths.copy(source,destination)
+    with fits.open(destination,mode='update') as hd:
+        native_compatible_dq(hd)
+        hd[0].header['HPCRRUN']=False
+        hd[0].header['QAONLY']=True
+        hd[0].header.add_history('No-CR QA copy: reset only AstroDrizzle DQ bit 4096; retain calwf3 and detector flags, original SCI unchanged')
+    reset_dq_bits(str(destination),4096,extname='DQ')
 
 
 def _sky(a,valid):
@@ -54,7 +67,9 @@ def aperture_assessment(stack,weights,science,weight,center,*,flux_tolerance=.02
             q=(xx-bx)**2+(yy-by)**2<=radius**2
             if q.sum()>=area*.95 and np.mean(np.isfinite(reference[q]))>.95:blank.append(float(np.nansum(reference[q])))
         bnoise=float(sigma_clipped_stats(blank)[2]) if len(blank)>3 else 0.
-        error=max(jack,bnoise,1e-12);snr=fref/error;delta=fref-fout;loss=delta/fref if fref>0 else np.nan
+        # A nonpositive background-subtracted flux has no defined fractional
+        # loss. Keep its signed flux/SNR, but serialize that ratio as missing.
+        error=max(jack,bnoise,1e-12);snr=fref/error;delta=fref-fout;loss=delta/fref if fref>0 else None
         failed=bool(fref>0 and delta>max(flux_tolerance*fref,3*error))
         if failed:failure.append('significant_persistent_source_flux_loss')
         # Positive excess can be residual CR, but median/mean and pixel-phase
@@ -128,7 +143,7 @@ def validate_source_rejection(product,inputs,paths,relative,drizzle_options,*,re
     with paths.scratch('source-qa-') as tmp:
         temp=Path(tmp);copies=[]
         for p in inputs:
-            dest=temp/p.name;paths.copy(p,dest);copies.append(dest)
+            dest=temp/p.name;_diagnostic_copy(p,dest,paths);copies.append(dest)
         import os
         previous=Path.cwd()
         try:
@@ -169,6 +184,7 @@ def validate_source_rejection(product,inputs,paths,relative,drizzle_options,*,re
         validated_sources=len(valid),failed_sources=len(failed),independent_no_cr_inputs=[p.name for p in inputs],
         method='STScI separate square drizzle on the exact final WCS, followed by diagnostic pixel-median, aperture, PSF and WHT comparisons',
         original_pixels_modified=False,production_cr_parameters_modified=False,cutouts=str(cutfile),
+        diagnostic_resetbits=4096,diagnostic_calwf3_and_detector_flags_preserved=True,
         limitations=['Median/mean and detector pixel-phase differences enter empirical uncertainty; this is not calibrated aperture photometry or a covariance map'])
     fits.HDUList(stamps).writeto(cutfile,overwrite=True,checksum=True)
     _plot(panels,paths)

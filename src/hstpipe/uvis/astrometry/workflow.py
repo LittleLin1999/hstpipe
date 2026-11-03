@@ -82,16 +82,39 @@ def validate_relative_transfer(relative_inputs,working_inputs,relative,options,p
     with fits.open(after[0]) as hd:new=WCS(hd['SCI'].header,hd)
     options=dict(options,pixel_scale_arcsec=float(np.sqrt(abs(np.linalg.det(old.pixel_scale_matrix)))*3600))
     a=[project(c,p,old) for c,p in zip(cats,before)];b=[project(c,p,new) for c,p in zip(cats,after)];pairs=[]
-    for i in range(1,len(before)):
+    network=relative.get('network') or {}
+    pair_indices=[(0,i) for i in range(1,len(before))]
+    basis='direct_reference'
+    if network.get('status')=='connected':
+        # Registration may be established through overlapping exposure pairs.
+        # Requiring every exposure to match the anchor directly would replace
+        # the accepted graph with a different, potentially unconstrained fit.
+        indices={p.name:i for i,p in enumerate(before)}
+        pair_indices=[(indices[e['reference']],indices[e['exposure']]) for e in network.get('edges',[])
+                      if e.get('status')=='validated' and e.get('reference') in indices and e.get('exposure') in indices]
+        connected={0}
+        for _ in before:
+            for j,i in pair_indices:
+                if {j,i}&connected:connected.update((j,i))
+        if len(connected)!=len(before) or network.get('closure',{}).get('status')=='inconsistent':
+            return dict(status='unvalidated',pairs=[],external_catalog_used=False,reason='Saved accepted relative graph is disconnected or closure-inconsistent')
+        basis='accepted_connected_graph'
+    for j,i in pair_indices:
         try:
-            ri,ii=catalog_match(a[0],a[i],cats[0],cats[i],options,True)
-            errors=np.hypot(cats[0]['centroid_error_pix'][ri],cats[i]['centroid_error_pix'][ii])
-            initial=quality(a[0][ri],a[i][ii],errors,options,identities_verified='common_source_id' in cats[0].colnames and 'common_source_id' in cats[i].colnames)
-            current=quality(b[0][ri],b[i][ii],errors,options,identities_verified='common_source_id' in cats[0].colnames and 'common_source_id' in cats[i].colnames)
-            pairs.append(dict(reference=before[0].name,exposure=before[i].name,before=initial,after=current))
+            ri,ii=catalog_match(a[j],a[i],cats[j],cats[i],options,True)
+            errors=np.hypot(cats[j]['centroid_error_pix'][ri],cats[i]['centroid_error_pix'][ii])
+            initial=quality(a[j][ri],a[i][ii],errors,options,identities_verified='common_source_id' in cats[j].colnames and 'common_source_id' in cats[i].colnames)
+            current=quality(b[j][ri],b[i][ii],errors,options,identities_verified='common_source_id' in cats[j].colnames and 'common_source_id' in cats[i].colnames)
+            pairs.append(dict(reference=before[j].name,exposure=before[i].name,before=initial,after=current,reference_indices=ri.tolist(),source_indices=ii.tolist()))
         except Exception as exc:pairs.append(dict(exposure=before[i].name,after=dict(status='unvalidated'),error=str(exc)))
-    result=dict(status='validated' if all(p['after']['status']=='validated' for p in pairs) else 'unvalidated',pairs=pairs,
+    result=dict(status='validated' if pairs and all(p.get('before',{}).get('status')=='validated' and p['after']['status']=='validated' for p in pairs) else 'unvalidated',pairs=pairs,validation_basis=basis,
+        previously_unaccepted_edges=[dict(reference=e.get('reference'),exposure=e.get('exposure'),status=e.get('status')) for e in network.get('edges',[]) if e.get('status')!='validated'],
         external_catalog_used=False,method='Same detector centroids and fixed internal pairs, projected through updated distortion-aware WCS')
+    if basis=='accepted_connected_graph' and result['status']=='validated':
+        from .relative_engine import overlap_graph
+        checked=overlap_graph(after,cats,options,paths,'relative_after_tweakback')
+        result['closure']=checked['closure']
+        if checked['status']!='connected' or checked['closure']['status']=='inconsistent':result['status']='unvalidated'
     save(paths.file('diagnostics','alignment','relative_after_tweakback'),result)
     return result
 

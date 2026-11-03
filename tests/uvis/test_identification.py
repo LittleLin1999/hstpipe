@@ -15,6 +15,24 @@ def options():return settings({})['astrometry']
 def candidate(ra,dec):
     return dict(source_id='G1',gaia_id='1',legacy_id='',ra=ra,dec=dec,classification='gaia_stellar_candidate',release='Gaia DR3')
 
+
+def test_identification_policy_is_independent_of_absolute_cuts(options):
+    from copy import deepcopy
+    prior=deepcopy(options['catalogs']['legacy_dr10']['quality'])
+    options['source_identification']['catalog_quality']={'legacy_dr10':prior}
+    options['catalogs']['legacy_dr10']['quality'].update(min_snr=0.,max_position_error_mas=200.)
+    selected=i.identification_quality(options,'legacy_dr10')
+    assert selected['min_snr']==10 and 'max_position_error_mas' not in selected
+    assert options['catalogs']['legacy_dr10']['quality']['min_snr']==0.
+    assert prior==options['source_identification']['catalog_quality']['legacy_dr10']
+
+
+def test_identification_default_preserves_shared_policy(options):
+    options['catalogs']['legacy_dr10']['quality']['min_snr']=12.
+    assert i.identification_quality(options,'legacy_dr10')['min_snr']==12.
+    with pytest.raises(ValueError,match='catalog_quality'):
+        settings({'astrometry':{'source_identification':{'catalog_quality':{'unknown':{}}}}})
+
 @pytest.mark.parametrize('chips',[(7,),(1,7)])
 def test_footprint_and_projection_use_actual_chips(flc,chips,options):
     p=flc(chips=chips,ra=359.999,size=256)

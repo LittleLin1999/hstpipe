@@ -50,6 +50,8 @@ def settings(options):
     ident=astro['source_identification']
     if ident['use_external_positions_for_relative_fit']:raise ValueError('External source identities may guide associations, never relative-fit coordinates')
     if set(ident['catalogs'])-{'gaia_dr3','legacy_dr10'}:raise ValueError('Unknown source-identification catalog')
+    policies=ident.get('catalog_quality',{})
+    if not isinstance(policies,dict) or set(policies)-{'gaia_dr3','legacy_dr10'} or any(not isinstance(v,dict) for v in policies.values()):raise ValueError('Source-identification catalog_quality must map supported catalogs to quality policies')
     if ident['search_radius_arcsec']<=0 or ident['max_search_radius_pix']<=0:raise ValueError('Source search windows must be bounded and positive')
     rel=astro['relative']
     if rel.get('external_catalog',False) or not rel.get('enabled',True) or not rel.get('require_validated_solution',True):raise ValueError('FLC relative registration is mandatory and cannot use external catalogs')

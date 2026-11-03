@@ -126,3 +126,31 @@ def test_tweakback_relative_qa_checks_internal_pairs_not_external_sources(flc,tm
     assert result['status']=='validated' and not result['external_catalog_used']
     with fits.open(updated[1],mode='update') as hd:hd['SCI'].header['CRPIX1']+=4
     assert validate_relative_transfer(files,updated,relative,options,paths)['status']=='unvalidated'
+
+
+@pytest.mark.parametrize('changed,disconnected',[(False,False),(True,False),(False,True)])
+def test_tweakback_preserves_accepted_connected_pairs(flc,tmp_path,changed,disconnected):
+    import shutil
+    from astropy.io import fits
+    from hstpipe.common.paths import ReductionPaths
+    from hstpipe.uvis.astrometry.workflow import validate_relative_transfer
+    files=[flc(n,size=256) for n in ('a','b','c')];updated=[];entries=[]
+    paths=ReductionPaths(tmp_path/'redux','TEST','uvis','F275W')
+    for i,p in enumerate(files):
+        copy=tmp_path/('copy_'+p.name);shutil.copy2(p,copy);updated.append(copy)
+        with fits.open(copy,mode='update') as hd:
+            hd['SCI'].header['CRVAL1']+=.001
+            if changed and i==2:hd['SCI'].header['CRPIX1']+=4
+        cat=_internal_catalog(p);cat['common_source_id']=[str(k) for k in range(len(cat))]
+        if i==0:cat=cat[:4]
+        if i==2:cat=cat[4:]
+        out=paths.exposure_file('intermediate','alignment',p.stem,'relative_sources','ecsv');out.parent.mkdir(parents=True,exist_ok=True)
+        cat.write(out,format='ascii.ecsv');entries.append(dict(exposure=p.name,path=str(out)))
+    edges=[dict(reference=files[j].name,exposure=files[i].name,status='validated') for j,i in [(0,1),(1,2)]]
+    if disconnected:edges=edges[:1]
+    relative=dict(reference=files[0].name,detector_catalogs=entries,network=dict(status='connected',closure=dict(status='not_constrained'),edges=edges))
+    result=validate_relative_transfer(files,updated,relative,settings({})['astrometry']['relative'],paths)
+    assert result['status']==('unvalidated' if changed or disconnected else 'validated')
+    if not changed and not disconnected:
+        assert result['validation_basis']=='accepted_connected_graph'
+        assert [(p['reference'],p['exposure']) for p in result['pairs']]==[(files[0].name,files[1].name),(files[1].name,files[2].name)]

@@ -113,6 +113,9 @@ def cr_report(original,working,maskfile,diagnostics,threshold,*,paths=None):
             row['source_validation_required']=True
             if row['new_cr_fraction']>0.1:row['warnings'].append('Excessive rejection; inspect alignment')
             report.append(row)
+    # A fresh reduction has no drizzle directory until its first retained output.
+    from pathlib import Path
+    Path(maskfile).parent.mkdir(parents=True,exist_ok=True)
     fits.HDUList(masks).writeto(maskfile,overwrite=True,checksum=True)
     return report
 

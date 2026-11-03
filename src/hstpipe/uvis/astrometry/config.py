@@ -1,7 +1,7 @@
 """Configurable astrometric criteria in arcseconds, separated by reference quality."""
 from .centroids import QUALITY_DEFAULTS
 from .stellar import DEFAULTS as STELLAR_DEFAULTS
-DEFAULTS=dict(source_identification=dict(enabled=True,catalogs=['gaia_dr3','legacy_dr10'],use_external_positions_for_relative_fit=False,
+DEFAULTS=dict(source_identification=dict(enabled=True,catalogs=['gaia_dr3','legacy_dr10'],catalog_quality={},use_external_positions_for_relative_fit=False,
     prefer_stars=True,allow_compact_galaxies=True,margin_arcsec=10.,search_radius_arcsec=2.,max_search_radius_pix=64.,
     merge_radius_arcsec=1.,detector_merge_radius_pix=2.,legacy_types=['PSF','REX','EXP','DEV','SER'],max_legacy_shape_arcsec=1.,
     kernel_width_pix=3.5,psf_resolution=STELLAR_DEFAULTS,allow_masked_stellar_priors=True,max_window_plots=8,max_width_ratio=2.,max_flux_ratio=5.,max_ellipticity_difference=.3,timeout=30,retries=0),

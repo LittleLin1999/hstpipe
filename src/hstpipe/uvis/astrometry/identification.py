@@ -243,6 +243,19 @@ def _window_plot(image,p,cat,segments,paths,label,plot=True):
         fig.tight_layout();fig.savefig(paths.file('diagnostics','alignment',label+f'_sci{v}_prior','png'),dpi=100);plt.close(fig)
 
 
+def identification_quality(astrometry,name):
+    """Identity priors may have a different selection from absolute references.
+
+    A supplied per-catalog policy replaces the shared quality policy. Provider
+    defaults still apply; an absolute-only cut cannot leak into this stage.
+    """
+    options=astrometry['source_identification'];provider=astrometry['catalogs'][name]
+    quality=dict(options.get('catalog_quality',{}).get(name,provider['quality']))
+    if name=='gaia_dr3':quality['apply_proper_motion']=provider['apply_proper_motion']
+    else:quality.update(types=options['legacy_types'],max_shape_arcsec=options['max_legacy_shape_arcsec'],allow_masked_stellar_priors=options.get('allow_masked_stellar_priors',True))
+    return quality
+
+
 def identify(inputs,paths,astrometry):
     options=astrometry['source_identification'];cache=paths.cache()
     reportfile=paths.file('intermediate','alignment','source_identification');commonfile=paths.file('intermediate','alignment','common_sources','ecsv')
@@ -263,10 +276,8 @@ def identify(inputs,paths,astrometry):
     for name in options['catalogs']:
         q=dict(catalog=name,status='pending')
         try:
-            provider=astrometry['catalogs'][name];quality=dict(provider['quality'])
+            provider=astrometry['catalogs'][name];quality=identification_quality(astrometry,name)
             kwargs=dict(quality=quality,cache_dir=paths.catalog_directory(),refresh=(astrometry['catalogs']['refresh'] or not astrometry['catalogs']['cache']),offline=astrometry['catalogs']['offline'],timeout=options['timeout'],retries=options['retries'])
-            if name=='gaia_dr3':quality['apply_proper_motion']=provider['apply_proper_motion']
-            else:quality.update(types=options['legacy_types'],max_shape_arcsec=options['max_legacy_shape_arcsec'],allow_masked_stellar_priors=options.get('allow_masked_stellar_priors',True))
             reused=None
             if astrometry['catalogs']['cache'] and not astrometry['catalogs']['refresh']:
                 try:

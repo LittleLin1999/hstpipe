@@ -195,6 +195,12 @@ alone. Per-filter receipts prevent unrelated filters from being invalidated.
 Astrometric cache restoration starts with the relative checkpoint; the same
 transformation is never compounded on an already-corrected exposure.
 
+When relative registration is established through a connected overlap graph,
+post-TweakBack validation rechecks its accepted exposure pairs, their original
+centroid measurements, and closure consistency. It does not require new direct
+connections to every exposure. Disconnected graphs or degraded accepted edges
+remain unvalidated; previously rejected edges remain in the diagnostic record.
+
 
 ## Compact references and source-selection provenance
 
@@ -218,12 +224,26 @@ filter_overrides:
         compact_kernel_widths: [3.5, 6.0]  # pixels on the image being measured
         compact_min_snr: 10
         compact_max_centroid_change_pix: 0.5
+      source_identification:
+        catalog_quality:
+          legacy_dr10:
+            min_snr: 10
+            isolation_arcsec: 1.5
+            max_fracflux: 0.5
+            max_fracmasked: 0.2
       catalogs:
         legacy_dr10:
           quality:
             min_snr: 0
             max_position_error_mas: 200
 ```
+
+`source_identification.catalog_quality` optionally supplies a separate quality
+policy for each identification catalog. A supplied policy replaces that stage's
+shared quality settings (provider defaults still apply). Without it, existing
+shared-policy behavior is preserved. Use it when changing absolute-reference
+selection so a fresh run retains the intended relative-identification policy.
+The effective cuts are recorded in each query's provenance and affect its cache key.
 
 This optional catalog policy replaces the Legacy flux-S/N cut with a finite,
 positive radial positional-error limit, while retaining coverage, primary-object,
@@ -348,3 +368,7 @@ absolute-stage receipt, corrected provisional WCS and contributing relative FLC
 identities before restoring headerlets and running the final pass. It does not
 requery or refit absolute astrometry. Modified dependencies stop that resume;
 they require a normal astrometric revalidation. Final image/source QA still runs.
+
+The no-CR source-QA reference resets only AstroDrizzle DQ bit 4096 on disposable
+copies before separate drizzle. It preserves calwf3 bit 8192, other detector
+flags and SCI values; production CR masks cannot bias both sides of this check.

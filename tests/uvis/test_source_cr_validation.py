@@ -7,6 +7,32 @@ def scene():
     stack=np.array([star+rng.normal(0,.05,star.shape) for _ in range(4)]);weights=np.ones_like(stack)*100
     return star,stack,weights
 
+def test_nonpositive_reference_flux_has_missing_ratio_not_nan():
+    import json
+    star,stack,weights=scene()
+    stack=-np.abs(stack);science=-star
+    result,_=aperture_assessment(stack,weights,science,np.ones_like(star)*400,(38.2,37.9))
+    assert all(row['reference_flux']<0 and row['loss_fraction'] is None and row['status']=='low_snr' for row in result['apertures'])
+    json.dumps(result,allow_nan=False)
+
+
+def test_no_cr_reference_clears_only_4096_on_copies(flc,tmp_path):
+    from astropy.io import fits
+    from hstpipe.common.paths import ReductionPaths
+    from hstpipe.uvis.source_qa import _diagnostic_copy
+    source=flc(chips=(1,2));destination=tmp_path/'qa_flc.fits'
+    with fits.open(source,mode='update') as hd:
+        hd[0].header['HPCRRUN']=True
+        for v in (1,2):hd['DQ',v].data[5,5]=4096|8192|256
+    before=source.read_bytes()
+    _diagnostic_copy(source,destination,ReductionPaths(tmp_path/'redux','T','uvis','F275W'))
+    with fits.open(source) as raw,fits.open(destination) as qa:
+        for v in (1,2):
+            assert qa['DQ',v].data[5,5]==8192|256
+            assert np.array_equal(raw['SCI',v].data,qa['SCI',v].data)
+        assert not qa[0].header['HPCRRUN'] and qa[0].header['QAONLY']
+    assert source.read_bytes()==before
+
 def test_correctly_removed_cosmic_rays_do_not_fail_stellar_qa():
     star,stack,weights=scene()
     for i in range(4):stack[i,32+i*2,35+i*3]+=10000

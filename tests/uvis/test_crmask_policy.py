@@ -4,6 +4,23 @@ from astropy.io import fits
 from hstpipe.uvis.astrometry.centroids import pixel_masks,validate_centroids
 from astropy.table import Table
 
+
+def test_cr_mask_creates_fresh_stage_directory(flc,tmp_path,monkeypatch):
+ from hstpipe.uvis import qa
+ original=flc('original',chips=(1,2),size=32)
+ working=tmp_path/'working_flc.fits'
+ working.write_bytes(original.read_bytes())
+ before=original.read_bytes()
+ with fits.open(working,mode='update') as hd:
+  hd['DQ',1].data[5,5]|=4096
+  hd['DQ',2].data[6,6]|=4096
+ monkeypatch.setattr(qa,'image_plot',lambda *a,**k:None)
+ mask=tmp_path/'fresh'/'intermediate'/'drizzle'/'test_crmask.fits'
+ result=qa.cr_report(original,working,mask,tmp_path,.02)
+ with fits.open(mask) as hd:
+  assert hd['SCI',1].data[5,5]==1 and hd['SCI',2].data[6,6]==1
+ assert len(result)==2 and original.read_bytes()==before
+
 @pytest.mark.parametrize('version',[1,2])
 def test_inherited_cr_core_recovered_with_other_flags_preserved(tmp_path,version):
  y,x=np.indices((51,51));s=5+1000*np.exp(-((x-25)**2+(y-25)**2)/(2*1.3**2));d=np.zeros(s.shape,'u2');d[22:29,22:29]=4096

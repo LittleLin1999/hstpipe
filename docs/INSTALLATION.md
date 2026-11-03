@@ -1,5 +1,7 @@
 # Installation
 
+[Home](../README.md) · [UVIS guide](uvis.md) · [STIS workflow](WORKFLOWS.md#stis-reduction)
+
 ## Automated Linux setup
 
 From a source checkout, run:
@@ -102,8 +104,10 @@ After full setup:
 python support/check_environment.py
 python -m pip check
 hstpipe --help
-python -m pytest
 ```
+
+For code changes, run the focused tests covering the modified behavior. A full
+science reduction or broad test suite is not an installation prerequisite.
 
 The environment checker imports both instruments' dependencies and checks that
 HSTCAL executables exist. It does not reduce data or validate native science

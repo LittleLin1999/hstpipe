@@ -1,5 +1,7 @@
-> Historical science-method notes. Current installation, CLI and paths are
-> documented in INSTALLATION.md and WORKFLOWS.md.
+> Historical science-method notes. The script/configuration paths below belong
+> to the earlier implementation. For runnable commands, use the
+> [current STIS workflow](WORKFLOWS.md#stis-reduction) and
+> [installation guide](INSTALLATION.md).
 
 # STIS reduction scripts
 
@@ -16,7 +18,7 @@ python scripts/reduce_stis.py config/stis_j1022.json
 
 The supplied J1022 config points to data on **erebus**. Run where those paths
 are accessible, or edit the config for your local data. For another target,
-copy [the example config](../config/stis_config.example.json) and set its paths.
+copy the historical `config/stis_config.example.json` and set its paths.
 The output prefix is read from FITS `TARGNAME` and `OPT_ELEM`; no target redshift
 or source-line windows are required.
 

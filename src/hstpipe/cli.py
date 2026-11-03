@@ -16,7 +16,15 @@ def main(argv=None):
         if instrument=='uvis':
             p=commands.add_parser('migrate')
             p.add_argument('--output',required=True);p.add_argument('--target');p.add_argument('--dry-run',action='store_true')
+            p=commands.add_parser('cleanup',help='Preview or remove regenerable UVIS comparison images')
+            p.add_argument('--output',required=True);p.add_argument('--target')
+            mode=p.add_mutually_exclusive_group()
+            mode.add_argument('--apply',action='store_true',help='Remove the eligible diagnostic files')
+            mode.add_argument('--dry-run',action='store_true',help='Preview only (default)')
     args=parser.parse_args(argv)
+    if args.command=='cleanup':
+        from .common.uvis_cleanup import cleanup_uvis
+        print(json.dumps(cleanup_uvis(args.output,target=args.target,apply=args.apply),indent=2));return
     if args.command=='migrate':
         from .uvis.migration import migrate_uvis
         print(json.dumps(migrate_uvis(args.output,target=args.target,dry_run=args.dry_run),indent=2));return

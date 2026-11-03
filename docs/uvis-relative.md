@@ -1,10 +1,15 @@
 # Mandatory UVIS relative registration
 
-The current full-field workflow and catalog-assisted identity stage are described
-in [Full-field UVIS astrometry](uvis-full-field.md). Historical regression counts
-and any earlier prohibition on catalog *identification priors* below are
-superseded by that document. Relative fitting still uses only independently
-measured HST centroids; external RA/Dec are never relative-fit constraints.
+[UVIS guide](uvis.md) · [Source detection](uvis-full-field.md) · [Local source association](uvis-stellar-association.md)
+
+**Relative registration asks whether the same sources line up across exposures.**
+It uses measured HST centroids, with each chip's full distortion model. Gaia and
+Legacy may help identify a source; their RA/Dec coordinates are used as fit
+constraints only in the later absolute stage.
+
+Start with [strategies](#strategies-and-decisions) and
+[model selection](#sparse-common-source-models). Implementation details and
+historical measurements are retained below for developers.
 
 Every multi-exposure UVIS reduction now measures relative WCS before the normal
 provisional drizzle or absolute calibration, including exposures in one visit.
@@ -39,6 +44,7 @@ updates on full-frame and subarray copies, including rotation/scale and all SCI
 extensions. Originals remained unchanged.
 
 References inspected:
+
 - https://github.com/spacetelescope/drizzlepac
 - https://github.com/gbrammer/grizli
 - https://spacetelescope.github.io/hst_notebooks/notebooks/DrizzlePac/align_sparse_fields/align_sparse_fields.html
@@ -95,6 +101,8 @@ validation are discarded; the original exposure WCS remains available.
 
 ## Configuration
 
+The following is the `options.astrometry` section of a reduction YAML file:
+
 ```yaml
 astrometry:
   method: two_pass
@@ -142,62 +150,19 @@ an accepted science DRC. Prior products with unresolved relative provenance are
 archived before replacement. Background models have separate dependencies and
 are reused when alignment policy changes.
 
-Validation currently requires direct common-source support with the selected
-reference exposure. Chain-only overlap mosaics can remain unvalidated. Sparse
+The overlap graph may connect exposures through intermediate exposures; a direct
+match to the anchor is not required for every image. Each accepted connection
+must pass its fit checks, and cycle consistency is checked where measurable.
+Disconnected exposure groups remain unvalidated. Sparse
 fields, morphology-dependent centroids, guiding smear and fields lacking enough
 independent sources may remain unresolved even when native fitting runs.
 Gaussian/moment centroid errors and coadd moments are approximate diagnostics;
 no advanced PSF model or science photometry validation is implied.
 
-## Historical J1025+1402 regression outcome
-
-This section preserves an earlier run, not the current target status. Consult
-the target manifest/report for subsequent reductions.
-
-The pre-change code was rerun first on both filters. Neither obtained an accepted
-absolute solution. The integrated relative-stage trials subsequently evaluated
-active WCS, common IDC/OPUS alternatives, available headerlets, TweakReg, two
-segmentation kernel widths, histogram matching and iterative mosaic refinement.
-Neither filter established validated relative registration. No strategy is claimed
-to have solved these observations.
-
-F467M had 12/25/32/22 usable compact-source detections in the widest-kernel anchor
-selection; ifpg02e0q was selected as reference. Original-WCS histogram matching
-with the improved catalogs produced 1/9/7 candidate matches at kernel 3.5 and
-1/2/9 at kernel 6.0, across the three exposure/reference pairs. Some pairs had
-insufficient matches and the others failed fit validation.
-
-F621M had 87/82/78/79 measured compact sources; ifpg02ecq was selected as reference.
-Original-WCS histogram matching produced 18/5/5 candidate matches at kernel 3.5
-and 15/4/6 at kernel 6.0. Having enough candidate matches did not establish a
-reliable fit: the fit/leave-one-out/stability policy still rejected the solutions.
-These are candidate associations, not certified astronomical matches.
-
-Both manifest entries have status `relative_astrometry_unvalidated`. Flagged
-relative-inspection coadds are retained, and absolute alignment/TweakBack/new
-science DRC generation are blocked. Existing production products were preserved.
-The group runner checks original raw input identities after processing.
-
-A focused re-evaluation using the saved detector catalogs confirmed that the
-final original-WCS preservation policy does not silently accept either filter.
-Only the focused relative-registration tests were run at completion: 17 passed.
-Coverage includes known offsets versus scatter, histogram matching, geometry
-counts, nonfinite/unreliable fits, same-visit failure gating, no absolute/TweakBack
-on failure, hot-pixel rejection, image-quality acceptance/rejection, preservation
-of an original WCS validated by better catalogs, native custom-reference dispatch,
-and explicit user initialization. Full-package test repetition was stopped at the
-user's request.
-
-Records on Erebus: per-filter `intermediate/alignment/*_alignment.json`,
-`*_relative_decisions.json`, source/match tables and diagnostics; execution log
-`/tmp/hstpipe-j1025-release-regression.log`. The optional image-correlation path
-has not been demonstrated to produce an accepted solution on these observations.
-Manual verification of astronomical source identities and/or more informative
-reference-assisted detector centroid measurements remains necessary before
-claiming scientific success for J1025.
 
 
-## Sparse common-source models (2026-11-02)
+
+## Sparse common-source models
 
 The standard verified-HST common-source path uses mathematical fit minima:
 shift 1, fixed-scale rotation+shift 2 distinct objects, uniform-scale
@@ -264,3 +229,55 @@ measurements sharing sources/exposures are correlated, not independent samples.
 The configured minimum improvement is unchanged; sparse counts alone do not
 authorize corrections. The report shows both RMS values, their difference,
 the criterion and the number of pair measurements used.
+
+<details>
+<summary>Historical J1025 regression: earlier failures and test counts</summary>
+
+## Historical J1025+1402 regression outcome
+
+This section preserves an earlier run, not the current target status. Consult
+the target manifest/report for subsequent reductions.
+
+The pre-change code was rerun first on both filters. Neither obtained an accepted
+absolute solution. The integrated relative-stage trials subsequently evaluated
+active WCS, common IDC/OPUS alternatives, available headerlets, TweakReg, two
+segmentation kernel widths, histogram matching and iterative mosaic refinement.
+Neither filter established validated relative registration. No strategy is claimed
+to have solved these observations.
+
+F467M had 12/25/32/22 usable compact-source detections in the widest-kernel anchor
+selection; ifpg02e0q was selected as reference. Original-WCS histogram matching
+with the improved catalogs produced 1/9/7 candidate matches at kernel 3.5 and
+1/2/9 at kernel 6.0, across the three exposure/reference pairs. Some pairs had
+insufficient matches and the others failed fit validation.
+
+F621M had 87/82/78/79 measured compact sources; ifpg02ecq was selected as reference.
+Original-WCS histogram matching produced 18/5/5 candidate matches at kernel 3.5
+and 15/4/6 at kernel 6.0. Having enough candidate matches did not establish a
+reliable fit: the fit/leave-one-out/stability policy still rejected the solutions.
+These are candidate associations, not certified astronomical matches.
+
+Both manifest entries have status `relative_astrometry_unvalidated`. Flagged
+relative-inspection coadds are retained, and absolute alignment/TweakBack/new
+science DRC generation are blocked. Existing production products were preserved.
+The group runner checks original raw input identities after processing.
+
+A focused re-evaluation using the saved detector catalogs confirmed that the
+final original-WCS preservation policy does not silently accept either filter.
+Only the focused relative-registration tests were run at completion: 17 passed.
+Coverage includes known offsets versus scatter, histogram matching, geometry
+counts, nonfinite/unreliable fits, same-visit failure gating, no absolute/TweakBack
+on failure, hot-pixel rejection, image-quality acceptance/rejection, preservation
+of an original WCS validated by better catalogs, native custom-reference dispatch,
+and explicit user initialization. Full-package test repetition was stopped at the
+user's request.
+
+Records on Erebus: per-filter `intermediate/alignment/*_alignment.json`,
+`*_relative_decisions.json`, source/match tables and diagnostics; execution log
+`/tmp/hstpipe-j1025-release-regression.log`. The optional image-correlation path
+has not been demonstrated to produce an accepted solution on these observations.
+Manual verification of astronomical source identities and/or more informative
+reference-assisted detector centroid measurements remains necessary before
+claiming scientific success for J1025.
+
+</details>

@@ -1,16 +1,28 @@
-# Architecture
+# Code architecture
 
-The original 15-module STIS implementation was inspected and retained. Common
-infrastructure handles YAML, paths, inventory, constant-array/multi-imset FITS
-validation, provenance, logging and stage receipts. Instrument grouping remains
-in each instrument namespace. No legacy import aliases are retained.
+[Home](../README.md) · [User workflows](WORKFLOWS.md)
 
-STIS retains its background, calibration, geometry, resampling, coadd, extraction,
-optimal, products, io, reference and diagnostic modules. pipeline.py orchestrates
-the six native science functions with content-addressed per-stage receipts.
-No numerical scientific method changed. Intermediate path changes, new diagnostic
-routing, registration.ecsv and shared manifests are infrastructure changes.
-See WORKFLOWS.md for output layout and independent stage/API access.
+This page is for developers. To run a reduction or review its output, start with
+the [UVIS guide](uvis.md) or [STIS workflow](WORKFLOWS.md#stis-reduction).
+
+## Package responsibilities
+
+| Package | Responsibility |
+| --- | --- |
+| `hstpipe.common` | Configuration, paths, FITS inventory, logging, provenance, and stage receipts. |
+| `hstpipe.stis` | STIS background, calibration, combination, and extraction. |
+| `hstpipe.uvis` | UVIS detector processing and reduction orchestration. |
+| `hstpipe.uvis.astrometry` | Source measurement, catalog retrieval, relative/absolute registration, and WCS propagation. |
+| `hstpipe.uvis.reporting` | Offline HTML from saved results; no scientific fitting. |
+
+## STIS
+
+`pipeline.py` orchestrates six native stages: prepare, background, joint drizzle,
+MAST coadd, validation, and extraction. The background, calibration, geometry,
+resampling, coadd, extraction, optimal, products, I/O, reference, and diagnostic
+modules retain the established scientific methods. See [stage access](WORKFLOWS.md#python-stage-apis).
+
+## UVIS
 
 UVIS separates instrument processing, astrometric inference and presentation:
 
@@ -54,13 +66,18 @@ local fallback, provisional AstroDrizzle, absolute Gaia/Legacy alignment,
 TweakBack and final AstroDrizzle remain separate, validated stages. Conservative
 background handling avoids double subtraction; corrections are on working copies.
 
+`common/uvis_cleanup.py` implements explicit diagnostic pruning using shared
+paths, identities, and locks. It is outside the scientific code cache inputs,
+so installing the cleanup command does not invalidate reduction keys. Deleting
+a diagnostic can still invalidate a receipt that requires that output.
+
+## Caches and process boundaries
+
 Content-addressed receipts cover individual stages and independent filter groups.
 Report-only code is excluded from scientific cache keys. No maintenance operation
 rewrites a receipt to claim that changed scientific code has been validated.
-Real UVIS reductions have passed the available checks, with sparse-source and
-catalog-systematic limitations recorded per target/filter; historical run notes
-are evidence, not current science-readiness status. STIS scientific processing is
-unchanged.
+Historical run notes are evidence for particular datasets. The current target
+manifest and report determine science readiness. STIS processing is unchanged.
 
 Package imports are independent of the other instrument's optional dependencies.
 Adding COS/ACS requires a new instrument package with its own grouping/scientific

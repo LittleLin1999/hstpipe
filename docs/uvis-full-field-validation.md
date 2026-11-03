@@ -1,4 +1,4 @@
-# UVIS full-field registration implementation and J1025 regression
+# Historical J1025 full-field registration investigation
 
 > Historical run record. Counts, paths, thresholds and target outcomes below
 > describe those runs, not current defaults or current science-readiness status.
@@ -7,7 +7,7 @@
 
 Implemented in the existing editable package on Erebus:
 `/quasar/linxiaojing/lrd-squared/codes/hstpipe`.
-The final focused real-data run used the standard pipeline and finished with
+The focused real-data run documented here used the standard pipeline and finished with
 **relative astrometry unvalidated for both F467M and F621M**. No new science DRC,
 absolute solution, or TweakBack propagation was authorized for either group.
 Successful software tests do not establish successful scientific alignment.

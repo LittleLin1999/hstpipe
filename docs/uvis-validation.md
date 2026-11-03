@@ -1,4 +1,4 @@
-# UVIS direct-catalog validation on Erebus
+# Historical UVIS catalog and WCS validation
 
 > Historical run record. Counts, paths, thresholds and target outcomes below
 > describe those runs, not current defaults or current science-readiness status.

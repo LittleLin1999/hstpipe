@@ -1,11 +1,26 @@
-# UVIS handbook review and operational policy
+# UVIS detector and calibration policies
+
+[UVIS guide](uvis.md) · [Full-field astrometry](uvis-full-field.md)
+
+This page explains the implementation decisions from the handbook review.
+For everyday reduction and image review, use the UVIS guide.
+
+| Topic | Operational rule |
+| --- | --- |
+| Detector coverage | Discover every SCI/ERR/DQ set; preserve both CCDs and their distortion models. |
+| Pixel flags | Distinguish inherited AstroDrizzle 4096 from calwf3 8192; protect invalid cores. |
+| Background | Subtract only when the measurement is reliable; avoid double subtraction. |
+| Cosmic rays | Validate alignment before rejection; inspect real-source cores afterward. |
+| Photometry | Check existing calibration; do not reapply chip normalization or a final-image PAM. |
+| Sampling | Choose scale/pixfrac for the data; smaller pixels do not guarantee better resolution. |
+
 
 Reviewed the WFC3 Data Handbook v6.0 (June 2024), DrizzlePac Handbook v3.0
 (January 2025), the current STScI amplifier-equalization notebook and the
 installed DrizzlePac 3.11/STWCS APIs. This extends the existing package; STIS
 scientific processing is unchanged.
 
-## Already satisfied
+## Multi-chip geometry and calibration
 
 Inventory discovers every SCI/ERR/DQ imset and its physical CCDCHIP metadata,
 including single-SCI subarrays. Native centroid measurements from both CCDs
@@ -35,7 +50,7 @@ requires measured significance. No extra CTE calibration, chip flux normalizatio
 or final-image PAM correction is applied. SCI remains electrons/s; WHT semantics
 and correlated-noise limitations are documented without a fabricated ERR array.
 
-## Changes required by the review
+## DQ, sky, and source-detection decisions
 
 `dq.py` defines official UVIS flags and separate detector, centroid, background
 and science policies. Bit 4096 identifies AstroDrizzle rejection; 8192 identifies

@@ -1,4 +1,6 @@
-# Image-based compact-source association and local field references
+# Recognizing stars and compact sources
+
+[UVIS guide](uvis.md) · [Full-field detection](uvis-full-field.md) · [Relative fitting](uvis-relative.md)
 
 Catalog positions delimit identification windows, never relative-fit coordinates.
 The default profile assessment uses Photutils circular aperture masks on native
@@ -72,7 +74,7 @@ The HTML report embeds a bounded selection, includes numerical centroid/local
 offset diagnostics and unresolved reasons, and retains the strict <1,000,000
 byte limit. No target coordinates, filters or exposure counts are hardcoded.
 
-## Focused validation
+## Validation scope
 
 Tests cover aperture centroid preservation without PSF fitting, masked/saturated
 cores, cosmic-like pixels, neighbors, concentration-based identity discrimination,
@@ -110,6 +112,11 @@ multiple pairwise checks of the same object are not independent new sources.
 They do not authorize a full-field solution or relax existing fit/QA limits.
 Code changes invalidate identification/relative/downstream caches without
 invalidating unchanged background or full-field detector catalogs.
+
+### Historical regression example
+
+These results describe the earlier implementation check, not current target
+readiness. Consult each target report for the latest result.
 
 Eight focused tests passed for repeated HST association, partial coverage,
 conflicting labels, held-out checks, actual versus masked missing-centroid

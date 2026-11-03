@@ -1,52 +1,131 @@
-# Workflows and output layout
+# Reduction workflows
 
-Public API: hstpipe.stis.reduce_stis / hstpipe.uvis.reduce_uvis accept a YAML
-filename, a ReductionConfig, or an equivalent dictionary. The shared CLI uses
-hstpipe {stis,uvis} inspect/reduce. --dry-run never starts processing.
+[Home](../README.md) · [UVIS guide](uvis.md) · [Installation](INSTALLATION.md)
 
-STIS science stages are exposed as the functions returned by
-hstpipe.stis.pipeline.stages(): prepare, background, joint_drizzle, mast_coadd,
-validate, extract. Their native Config and input data models are preserved;
-these stages can be called from Python with their documented explicit inputs.
-The main API records per-stage hash receipts and reloads validated products.
-Input, parameters, package source, dependency version and native-executable
-changes invalidate affected downstream stages. --resume reuses valid stages;
---force archives an old run and starts anew. Failed stages never get a receipt.
+Use this page for the STIS configuration and shared restart behavior. UVIS has a
+[separate user guide](uvis.md) covering its report, image review, and cleanup.
 
-STIS outputs:
+## Choose an instrument
 
-    redux/{target}/stis/{grating}/[setup]/
-      products/{target}_{grating}_{s2d_drz,x2d_coadd,x1d}.fits
-      intermediate/background/           # per-FLT models and rate files
-      intermediate/flt/                  # input views, native operators/coadd arrays
-      intermediate/x2d/                  # individually cleaned archive spectra
-      intermediate/x1d/{flt,drz,x2d}/    # per-method extraction tables
-      intermediate/registration.ecsv
-      diagnostics/{background,coadd,extraction,fluxcal}/
-      logs/{reduction,stages}.log
-      config.yaml
-      config.json                       # native STIS effective configuration
-      manifest.json
+| Instrument | Input | Output directory |
+| --- | --- | --- |
+| STIS FUV-MAMA/G140L | Calibrated FLTs, matching X2Ds, reference tables | `redux/{target}/stis/{grating}/` |
+| WFC3/UVIS | Calibrated, CTE-corrected FLCs and distortion references | `redux/{target}/uvis/` |
 
-The consolidated X1D contains FLT/DRZ/X2D BINTABLEs and separate boxcar/optimal
-errors/masks. DQ aliases DQ_BOX; select optimal with DQ_OPT. No science defaults
-or units were changed for this infrastructure migration.
+## STIS reduction
 
-UVIS uses calibrated CTE-corrected FLC working copies, discovers every SCI/ERR/DQ
-imset, and validates internal exposure registration before provisional drizzle.
-External Gaia/Legacy catalogs may guide source identities; relative fitting uses
-measured HST centroids. Accepted absolute corrections on provisional images are
-propagated with STScI TweakBack before a new final AstroDrizzle pass.
+First inspect the exposures. The command prints a JSON inventory and compatible
+target/grating groups:
 
-    redux/{target}/uvis/products/{target}_{filter}[_setup]_drc.fits
+```bash
+hstpipe stis inspect --input /path/to/observations/raw/stis
+```
 
-Intermediate directories are shallow: catalogs, background, alignment, drizzle,
-and working. Diagnostics and logs are flat; filters/setup IDs are filenames.
-A standalone HTML report under 1 MB is always produced, including on failure.
+Save the following as `observations/configs/stis.yaml`. Replace `J1022+0841` with
+the target name in your FITS headers:
 
-Persistent-source QA compares the final image to independent no-CR single-image
-drizzles on the same WCS. Raw CR peaks and whole-region flagged-pixel fractions
-are not treated as lost astronomical flux. Failed registration, astrometry or
-source/image QA blocks publication and retains review products. Stage caches
-allow unchanged upstream work to be reused. See [UVIS](uvis.md) for configuration,
-validation criteria, FITS semantics and remaining science limitations.
+```yaml
+input: ../raw/stis
+output: ../redux
+instrument: stis
+target: J1022+0841
+element: G140L
+options:
+  reference_dir: ../calibration/stis
+  prepare_controls: true
+  extraction:
+    height_native_pixels: 11
+    optimal_height_native_pixels: 140
+    profile_height_native_pixels: 151
+    flux_mode: point
+```
+
+`prepare_controls: true` generates the official x2d controls using the patched
+HSTCAL installed by the setup script. To reuse existing controls, set
+`options.control_dir` to their directory and `options.prepare_controls: false`.
+That directory must contain `*_flt_omit.fits`, `*_flt_perform.fits`, and
+`*_flt_mapping.f64` for each input FLT. Use reference tables that match the
+observations; changing calibration versions changes the reduction.
+
+Preview the selected inputs and output location, then start processing:
+
+```bash
+hstpipe stis reduce --config /path/to/observations/configs/stis.yaml --dry-run
+hstpipe stis reduce --config /path/to/observations/configs/stis.yaml
+```
+
+`--dry-run` checks input selection and prints the plan; it does not execute science
+stages or establish that all calibration dependencies are ready.
+
+To continue a run or deliberately start it again:
+
+```bash
+# Reuse verified outputs; rerun stages whose inputs or dependencies changed.
+hstpipe stis reduce --config /path/to/observations/configs/stis.yaml --resume
+
+# Preserve the existing run in a timestamped backup and rebuild.
+hstpipe stis reduce --config /path/to/observations/configs/stis.yaml --force
+```
+
+YAML paths are relative to the YAML file. Explicit command-line paths are relative
+to your current directory. Separate incompatible instrument setups into separate
+input selections; `--setup` adds an output label and does not filter exposures.
+
+### STIS products
+
+For the example above, outputs are written under
+`redux/J1022+0841/stis/G140L/`:
+
+| Location | Contents |
+| --- | --- |
+| `products/*_s2d_drz.fits` | Combined spectrum from the FLT/drizzle branch |
+| `products/*_x2d_coadd.fits` | Combined spectrum from the x2d branch |
+| `products/*_x1d.fits` | FLT/DRZ/X2D tables containing boxcar and optimal extractions |
+| `diagnostics/` | Background, combination, extraction, and flux-calibration checks |
+| `intermediate/` | Per-exposure models and intermediate products |
+| `logs/` | Reduction and stage logs |
+| `config.yaml`, `manifest.json` | Effective configuration, input identities, and provenance |
+
+Inspect diagnostics before interpreting the spectra. For optimal extractions,
+use `DQ_OPT`; `DQ` is the boxcar mask (`DQ_BOX`). See
+[stage APIs](#python-stage-apis) for the complete product layout.
+
+## UVIS reduction
+
+Follow the [UVIS quick start](uvis.md#run-a-reduction). All available SCI extensions
+are detected automatically and paired with their ERR, DQ, and distortion WCS.
+Gaia/Legacy catalogs can help identify sources, but relative fitting uses measured
+HST centroids. Absolute calibration follows provisional drizzle; TweakBack then
+updates the working FLCs before final AstroDrizzle.
+
+Filters share a target directory. `intermediate/` has only `catalogs`,
+`background`, `alignment`, `drizzle`, and `working` stages as needed. Diagnostics
+and logs are flat. See the [output tree](uvis.md#output-layout).
+
+## Resume, rebuild, or clean up
+
+| Action | Command option | Effect |
+| --- | --- | --- |
+| Preview | `reduce --dry-run` | Show selected inputs and paths; no science processing. |
+| Continue | `reduce --resume` | Reuse stages whose dependencies and output identities still match. |
+| Rebuild | `reduce --force` | Preserve the previous run in a timestamped recovery location and rebuild. |
+| Prune UVIS comparison images | `uvis cleanup --output redux --apply` | Delete eligible regenerable comparisons; retain final and review images. |
+
+Changes to inputs, scientific parameters, code, dependencies, or native
+executables can invalidate affected caches. A report edit is not scientific
+revalidation. Cleanup does not rewrite receipts to pretend missing files exist;
+a later resume may regenerate removed diagnostics. See [cleanup scope](uvis.md#cleanup).
+
+## Python stage APIs
+
+`hstpipe.stis.reduce_stis` and `hstpipe.uvis.reduce_uvis` accept a YAML filename,
+a `ReductionConfig`, or a dictionary. The CLI provides the same top-level
+`inspect` and `reduce` operations.
+
+`hstpipe.stis.pipeline.stages()` exposes `prepare`, `background`, `joint_drizzle`,
+`mast_coadd`, `validate`, and `extract`. These retain their native configuration
+and input models. See the function docstrings for required arguments.
+
+STIS keeps its two independent 2D branches and consolidated FLT/DRZ/X2D extraction
+tables. The X1D `DQ` column aliases `DQ_BOX`; use `DQ_OPT` for optimal extraction.
+No UVIS maintenance or report operation changes STIS scientific processing.

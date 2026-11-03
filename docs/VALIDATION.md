@@ -1,11 +1,26 @@
-# Standalone validation on erebus
+# Validation records
+
+[Home](../README.md) · [Current workflows](WORKFLOWS.md)
+
+These are historical measurements, not a list of currently ready products.
+Use the report and manifest next to a target's data to determine its latest
+status. Passing software tests alone does not validate a scientific reduction.
+
+| Record | Scope |
+| --- | --- |
+| This page | STIS installation and six-exposure regression, 2026-10-30. |
+| [UVIS catalog validation](uvis-validation.md) | Direct catalog queries and native TweakBack/drizzle checks. |
+| [Earlier J1025 investigation](uvis-full-field-validation.md) | Source-quality defects and failed relative-alignment trials. |
+| [Handbook review](uvis-handbook.md) | DQ, sky, sampling, calibration, and multi-chip checks. |
+
+## STIS validation on Erebus — 2026-10-30
 
 2026-10-30: isolated Python 3.11 virtualenv, no inherited system site-packages.
 All extras installed from declared dependencies. pip check passes. HSTCAL was
 built afresh at the new software root from the pinned commit/patch, with CFITSIO
 supplied by the base Conda prefix. No old observational software path is needed.
 
-66 tests pass. Existing five low-sample background variance warnings remain.
+At that time, 66 tests passed. Existing five low-sample background variance warnings remain.
 Tests cover native STIS scientific behavior, independent masks/weights, YAML,
 metadata, constant-array imsets, inventory, duplicates, cache invalidation,
 partial resume, force/rebuild archiving, installed CLI, optional imports, UVIS
@@ -34,5 +49,5 @@ Installation consolidation: 31 native files copied byte-identically into .venv,
 with ldd resolving all HST libraries there. A real relocated X2D control reproduced
 SCI/ERR/DQ exactly. All six cache receipts were migrated only after verifying
 identical native bytes and unchanged stage-output hashes; resume reused every
-stage. All 66 tests pass. Separate software and administration folders were
+stage. All At that time, 66 tests passed. Separate software and administration folders were
 removed; setup records reside in reduction logs/setup and diagnostics/fluxcal/setup.

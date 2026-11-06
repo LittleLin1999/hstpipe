@@ -20,11 +20,12 @@ def test_target_paths_and_names():
     a=ReductionPaths(Path('/data/redux'),'T','uvis','F275W')
     b=ReductionPaths(a.root,'T','uvis','F336W')
     c=ReductionPaths(a.root,'T','uvis','F336W','field-abc')
-    assert a.directory==b.directory==c.directory==Path('/data/redux/T/uvis')
+    assert a.directory==b.directory==c.directory==Path('/data/redux/uvis/T')
     assert a.product('drc').name=='T_F275W_drc.fits'
     assert c.product('drc').name=='T_F336W_field-abc_drc.fits'
     assert a.file('diagnostics','drizzle','coverage','png')!=b.file('diagnostics','drizzle','coverage','png')
-    assert a.cache_directory!=b.cache_directory
+    assert a.cache_directory==b.cache_directory
+    assert a.cache().receipt('reduction')!=b.cache().receipt('reduction')
     assert c.exposure_file('intermediate','background','root','sky').name=='root_field-abc_sky.fits'
     stis=ReductionPaths(a.root,'T','stis','G140L')
     assert stis.directory==Path('/data/redux/T/stis/G140L') and stis.product('x1d').name=='T_G140L_x1d.fits'

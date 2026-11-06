@@ -36,13 +36,19 @@ def _anchor(paths,epoch,options):
     if not state.exists() or not options['cross_filter']['enabled']:return None
     records=json.loads(state.read_text()).get('filters',{})
     requested=options['cross_filter']['reference_filter']
-    own=records.get(paths.group_key,{}).get('scientific_assessment',{}).get('cross_filter_alignment',{})
+    # The common runner replaces this filter's manifest entry with 'running'
+    # before entering the engine. The checkpoint survives that transition.
+    checkpoint=paths.file('intermediate','alignment','cross_filter')
+    own=json.loads(checkpoint.read_text()) if checkpoint.exists() else records.get(paths.group_key,{}).get('scientific_assessment',{}).get('cross_filter_alignment',{})
+    provisional=paths.file('intermediate','drizzle','provisional','fits')
+    if own.get('target_signature') and (not provisional.exists() or signature(provisional)!=own['target_signature']):return None
     if own.get('status') not in ('validated','anchor'):return None
     rank=lambda item:(item[1].get('scientific_assessment',{}).get('astrometry',{}).get('final_validation',{}).get('uncertainty_arcsec') or float('inf'),-item[1].get('scientific_assessment',{}).get('astrometry',{}).get('final_validation',{}).get('matched',0))
     for key,r in sorted(records.items(),key=rank):
-        if key==paths.group_key or (requested!='auto' and r.get('filter')!=requested):continue
+        if key==paths.group_key or (not own.get('matches') and requested!='auto' and r.get('filter')!=requested):continue
         assessment=r.get('scientific_assessment',{})
         other=assessment.get('cross_filter_alignment',{})
+        if own.get('matches') and own.get('anchor_group')!=key:continue
         if not (own.get('anchor_group')==key or (other.get('status') in ('validated','anchor') and own.get('anchor_group')==other.get('anchor_group'))):continue
         relative=assessment.get('relative_astrometry',assessment.get('alignment',{}))
         if relative.get('status') not in ('validated','single_exposure'):continue
@@ -51,7 +57,7 @@ def _anchor(paths,epoch,options):
         if abs(epoch-ast.get('observation_epoch',epoch))>options['cross_filter']['max_epoch_difference_years']:continue
         image=Path(r['products'][0]['path'])
         if image.exists():
-            provisional=r.get('scientific_assessment',{}).get('provisional_image',{}).get('path')
+            provisional=ast.get('provisional_image_path') or r.get('scientific_assessment',{}).get('provisional_image',{}).get('path')
             return image,dict(ast,provisional_reference=provisional) if provisional and Path(provisional).exists() else ast
     return None
 
@@ -95,7 +101,14 @@ def absolute_alignment(provisional,rows,paths,options,*,reference_order=None):
         base['warnings'].append('Exposure epochs differ substantially: catalog is propagated to the effective mean epoch; inspect motion across epochs')
     attempts=[];anchor=_anchor(paths,epoch,options)
     base['cross_filter_status']='anchor_available' if anchor else 'no_validated_epoch_compatible_anchor'
-    if anchor:attempts.append(('cross_filter',anchor))
+    if anchor:
+        checkpoint=paths.file('intermediate','alignment','cross_filter')
+        saved=json.loads(checkpoint.read_text()) if checkpoint.exists() else {}
+        if saved.get('matches'):
+            from .cross_filter import transfer_absolute_frame
+            try:return transfer_absolute_frame(provisional,rows,paths,options,anchor)
+            except Exception as exc:base['attempts'].append(dict(reference='cross_filter',status='transfer_failed',error=f'{type(exc).__name__}: {exc}'))
+        else:attempts.append(('cross_filter',anchor))
     attempts.extend((r,None) for r in (reference_order or ('gaia_dr3','legacy_dr10')))
     for reference,anchor_data in attempts:
         attempt=dict(reference=reference,status='query_pending');base['attempts'].append(attempt)

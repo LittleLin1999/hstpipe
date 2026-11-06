@@ -43,8 +43,9 @@ def test_report_package_not_a_scientific_cache_dependency(tmp_path,monkeypatch):
     (root/'report_decisions.py').write_text('old presentation')
     (root/'._metadata.py').write_bytes(b'not Python')
     monkeypatch.setattr(storage,'__file__',str(root/'storage.py'))
+    common=tmp_path/'common';common.mkdir();calibration=common/'calibration.py';calibration.write_text('calibration v1')
     cache=StageCache(tmp_path/'cache');first=cache.key(storage.code_inputs(),{})
-    assert storage.code_inputs()==[science]
+    assert storage.code_inputs()==[calibration,science]
     report.write_text('report v2');assert first==cache.key(storage.code_inputs(),{})
     science.write_text('science v2');assert first!=cache.key(storage.code_inputs(),{})
 
@@ -65,6 +66,6 @@ def test_compact_report_uses_configuration_without_manual_resume_field(tmp_path)
     record={'status':'astrometry_unvalidated','filter':'F689M','configuration':{'options':settings({'astrometry':{'detection':{'method':'compact_stable','compact_min_snr':12.}}})},'scientific_assessment':{}}
     (p/'manifest.json').write_text(json.dumps({'target':'T','filters':{'F689M':record}}))
     generate_report(p)
-    report=p/'products'/'T_uvis_report.html'
+    report=p/'index.html'
     text=report.read_text();assert 'Absolute reference selection:' in text and '12.0' in text
     assert report.stat().st_size<1000000

@@ -210,3 +210,44 @@ def wcs_table(ctx):
 
 def render(ctx,record):
     return '<div class="astrometric-detail">'+source_table(ctx,record)+transformations(ctx)+wcs_table(ctx)+''.join('<p class="warning">'+esc(w)+'</p>' for w in ctx['warnings'])+'</div>'
+
+
+def cross_filter_summary(filters, workflow_error=None):
+    """Visible internal-fit and final-frame provenance; never infer final QA."""
+    rows=[];anchors=set()
+    for key,record in sorted(filters.items()):
+        a=record.get('scientific_assessment',{}) if not workflow_error else {}
+        c=a.get('cross_filter_alignment',a.get('stages',{}).get('cross_filter_alignment',{}))
+        status=c.get('status','not_recorded');anchor=c.get('anchor_group')
+        if anchor:anchors.add(c.get('network_root',anchor))
+        before=c.get('before',{});fit=c.get('validation') or before
+        ast=a.get('astrometry',{});mode=ast.get('reference_mode')
+        if ast.get('status')=='validated' and mode=='cross_filter':frame='Shared frame transferred; inspect final validation'
+        elif ast.get('status')=='validated':frame='Independent absolute fit; final cross-filter offsets not measured'
+        else:frame='No validated absolute frame'
+        refresh=a.get('cross_filter_reprocessing',{})
+        existing=c.get('final_validation',{})
+        if existing.get('status')=='validated':frame='Existing published DRC passes the cross-filter check; retained unchanged'
+        elif refresh:frame='New candidate: '+str(refresh.get('status','failed'))+'; previous published image retained'
+        if status=='anchor':reason='Reference chosen for this attempt; this alone does not align other filters'
+        elif status=='validated':reason='Internal common-source fit passed'
+        else:reason=c.get('reason',c.get('error','No saved cross-filter result'))
+        if before.get('status')=='candidate_fit_only':reason+='; association has insufficient independent validation'
+        rms=fit.get('postfit_scatter_pix');limit=fit.get('scatter_limit_pix')
+        if rms is not None and limit is not None and rms>limit:reason+='; scatter exceeds '+number(limit,3)+' pix'
+        uncertainty=fit.get('transform_uncertainty_pix')
+        threshold=record.get('configuration',{}).get('options',{}).get('astrometry',{}).get('relative',{}).get('max_transform_error_pix')
+        if uncertainty is not None and threshold is not None and uncertainty>threshold:reason+='; shift uncertainty exceeds '+number(threshold,3)+' pix'
+        badge={'validated':'PASS (internal)','anchor':'REFERENCE','unvalidated':'FAIL','not_applicable':'NOT APPLICABLE','skipped':'SKIPPED'}.get(status,'NOT RECORDED')
+        model=c.get('geometry')
+        if model:reason+='; '+model+(' ('+number(before.get('rotation_deg'),4)+' deg)' if before.get('rotation_measured') else ', rotation fixed')
+        final=existing.get('relative_to_anchor_rms_arcsec') if existing.get('status')=='validated' else (ast.get('final_validation',{}).get('relative_to_anchor_rms_arcsec') if mode=='cross_filter' and not refresh else None)
+        cells=[key,anchor or '—',badge,str(before.get('matched',fit.get('matched','—')))+' / '+str(fit.get('robust_inliers','—')),
+               number(before.get('initial_rms_pix'),3)+' → '+number(fit.get('current_rms_pix',rms),3),
+               number(final*1000,1) if final is not None else '—',reason+'. '+frame]
+        rows.append([esc(v) for v in cells])
+    text='<section id="cross-filter"><h2>Cross-filter alignment</h2><p>Exposure alignment within a filter and absolute Gaia/Legacy calibration are separate from alignment between filters. Per-filter science readiness does not establish precise multi-filter registration.</p>'
+    if len(anchors)>1:text+='<p><strong>Separate connected filter groups:</strong> '+esc(', '.join(sorted(anchors)))+'. The saved records do not establish one common frame across disconnected groups.</p>'
+    text+=table(('Filter','Reference','Internal result','Candidates / inliers','Before → after (pix)','Final RMS (mas)','Meaning'),rows)
+    text+='<p class="muted">Counts are matched candidates and robust fit inliers, not independently confirmed source identities. Initial offsets can be large and still correctable; acceptance uses post-fit scatter and uncertainty. A passed provisional fit alone is not a measurement of final cross-filter accuracy.</p></section>'
+    return text

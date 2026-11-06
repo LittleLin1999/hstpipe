@@ -170,14 +170,14 @@ def image_quality(before,after,reference_catalog,options,paths,label,after_catal
         no_cr_rejection=True,source_selection='Requires aperture SNR, centered significant emission and adequate EXP core coverage in both coadds',caveat='Cutout moments are not a PSF model; SNR is an approximate pixel-noise diagnostic and does not model drizzle covariance')
 
 
-def apply_native_fit(image,reference,fit):
+def apply_native_fit(image,reference,fit,*,wcsname='HP-RELATIVE'):
     """Adapt tweakwcs's centered zero-origin fit to updatehdr's FITS convention."""
     from drizzlepac.updatehdr import updatewcs_with_shift
     matrix=np.asarray(fit['matrix']);center=np.asarray(fit['center']);shift=np.asarray(fit['shift'])
     inverse=np.linalg.inv(matrix);coefficients=inverse.T
     offset=center-inverse@(center+shift)+np.ones(2)-inverse@np.ones(2)
     native_shift=offset+reference.wcs.crpix@coefficients-reference.wcs.crpix
-    updatewcs_with_shift(str(image),reference,wcsname='HP-RELATIVE',fitgeom=fit['geometry'],fit=coefficients,sciext='SCI',
+    updatewcs_with_shift(str(image),reference,wcsname=wcsname,fitgeom=fit['geometry'],fit=coefficients,sciext='SCI',
         xsh=float(native_shift[0]),ysh=float(native_shift[1]),force=False)
 
 

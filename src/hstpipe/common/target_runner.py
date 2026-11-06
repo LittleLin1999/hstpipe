@@ -28,7 +28,8 @@ def save(path,data,yaml_format=False):
 def target_lock(directory,group=None):
     import fcntl
     directory.mkdir(parents=True,exist_ok=True)
-    name='.uvis.lock' if group is None else '.uvis-'+group+'.lock'
+    prefix='.uvis-'+directory.name if directory.parent.name=='uvis' else '.uvis'
+    name=prefix+'.lock' if group is None else prefix+'-'+group+'.lock'
     with (directory.parent/name).open('a') as stream:
         try:fcntl.flock(stream,fcntl.LOCK_EX | (fcntl.LOCK_NB if group is not None else 0))
         except BlockingIOError:raise RuntimeError(f'Another reduction/migration is writing {directory}')
@@ -40,9 +41,9 @@ def run_uvis(config,engine,dry_run=False,_retry_anchors=True,_retry_group=None,_
     from ..uvis.storage import reduction_key
     from ..uvis.inventory import scan
     exposures,inventory_errors=_inventory if _inventory is not None else scan(config.input)
-    allgroups=groups(exposures,'uvis')
+    allgroups=groups(exposures,'uvis',field=config.field)
     for error in inventory_errors:
-        key=(error['target'],error['filter'],None)
+        key=(config.field or error['target'],error['filter'],None)
         if not any(k[:2]==key[:2] for k in allgroups):allgroups[key]=[]
     selected=[(k,v) for k,v in allgroups.items() if (not config.target or k[0]==config.target) and (not config.element or k[1]==config.element) and (_retry_group is None or k==_retry_group)]
     if not selected:raise ValueError('No compatible selected exposures')
@@ -63,7 +64,7 @@ def run_uvis(config,engine,dry_run=False,_retry_anchors=True,_retry_group=None,_
             roots[key]=f
     results=[]
     for (target,filt,setup),rows in selected:
-        existing=Path(config.output)/target/'uvis'/'config.yaml'
+        existing=ReductionPaths(Path(config.output),target,'uvis',filt).directory/'config.yaml'
         inherited=yaml.safe_load(existing.read_text()).get('filter_overrides',{}) if existing.exists() else {}
         override=merge(inherited.get(filt,{}),config.filter_overrides.get(filt,{}))
         options=settings(merge(config.options,override))
@@ -82,6 +83,8 @@ def run_uvis(config,engine,dry_run=False,_retry_anchors=True,_retry_group=None,_
                 statepath=paths.directory/'manifest.json'
                 state=json.loads(statepath.read_text()) if statepath.exists() else dict(schema_version=2,instrument='uvis',target=target,filters={})
                 state.pop('workflow_error',None)
+                state['field']=target
+                state['grouping']=dict(mode='explicit_field' if config.field else 'header_target',field=target)
                 if state.get('schema_version')!=2:raise ValueError('Unknown target manifest schema')
                 cache=paths.cache();key=reduction_key(cache,rows,options)
                 previous=state['filters'].get(paths.group_key,{})
@@ -115,7 +118,7 @@ def run_uvis(config,engine,dry_run=False,_retry_anchors=True,_retry_group=None,_
                 state['filters'][paths.group_key]=record;save(statepath,state)
                 log=reduction_logger(paths);log.info('Starting UVIS %s',paths.group_key)
             try:
-                bad=[e for e in inventory_errors if e['target']==target and e['filter']==filt]
+                bad=[e for e in inventory_errors if (config.field or e['target'])==target and e['filter']==filt]
                 if bad:
                     record['input_validation_errors']=bad
                     raise ValueError('Invalid FLC inputs block this filter: '+str(bad))

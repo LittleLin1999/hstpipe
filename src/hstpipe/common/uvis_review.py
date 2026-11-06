@@ -9,8 +9,7 @@ def review_uvis(directory, filter_key, *, approve=False, reviewer=None, reason=N
     directory = Path(directory).expanduser().resolve()
     state = json.loads((directory / 'manifest.json').read_text())
     record = state['filters'][filter_key]
-    paths = ReductionPaths(directory.parent.parent, state['target'], 'uvis',
-                           record['filter'], record.get('setup'))
+    paths = ReductionPaths.from_directory(directory, record['filter'], record.get('setup'), target=state['target'])
     if paths.directory != directory or paths.group_key != filter_key:
         raise ValueError('Use the actual target reduction directory and filter/setup key')
     assessment = record.get('scientific_assessment', {})
@@ -28,8 +27,11 @@ def review_uvis(directory, filter_key, *, approve=False, reviewer=None, reason=N
         raise ValueError('Missing or inconsistent recorded image identity; recover its QA provenance before approval')
     if identity(image) != recorded[0]:
         raise ValueError('Review FITS changed since its recorded assessment; review and validate the new image first')
+    report=paths.report()
+    legacy=paths.area('products')/f'{paths.target}_uvis_report.html'
+    if not report.is_file() and legacy.is_file():report=legacy
     result = dict(target=state['target'], filter=filter_key, status=record['status'],
-                  image=str(image), report=str(paths.report()),
+                  image=str(image), report=str(report),
                   sources=[{k:s.get(k) for k in ('source_id','failures','output_x','output_y','apertures')} for s in sources],
                   approved=False)
     if approve:
@@ -39,5 +41,5 @@ def review_uvis(directory, filter_key, *, approve=False, reviewer=None, reason=N
         product = approve_source_review(directory, filter_key, reviewer=reviewer,
             reason=reason, source_ids=[s['source_id'] for s in sources],
             expected_sha256=recorded[0]['sha256'])
-        result.update(approved=True, product=str(product))
+        result.update(approved=True, product=str(product), report=str(paths.report()))
     return result

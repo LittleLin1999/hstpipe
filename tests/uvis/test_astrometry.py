@@ -113,7 +113,7 @@ def test_cross_filter_uses_validated_anchor(flc,tmp_path,monkeypatch):
     (paths.directory/'manifest.json').write_text(json.dumps(state))
     (paths.file('intermediate','alignment','cross_filter')).write_text(json.dumps(dict(status='validated',anchor_group='F814W')))
     from hstpipe.uvis.astrometry import sources as source_module
-    monkeypatch.setattr(source_module,'sources',lambda p,*args:grid(p))
+    monkeypatch.setattr(source_module,'sources',lambda p,*args,**kwargs:grid(p))
     monkeypatch.setattr(a,'detect_sources',lambda p,*a,**kwargs:grid(p));monkeypatch.setattr(drizzlepac.tweakreg,'TweakReg',fake_tweakreg)
     monkeypatch.setattr(a,'query_gaia_dr3',lambda *a,**k:pytest.fail('Cross-filter anchor should avoid a separate external query'))
     result,_=a.absolute_alignment(p,rows,paths,opts)

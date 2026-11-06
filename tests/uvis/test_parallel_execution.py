@@ -26,11 +26,11 @@ def test_filters_compute_concurrently_without_lost_manifest_rows(flc,tmp_path):
     with ProcessPoolExecutor(max_workers=2,mp_context=get_context('spawn')) as pool:
         jobs=[pool.submit(_run,replace(config,element=f)) for f in ('F275W','F336W')]
         for job in jobs:job.result(timeout=40)
-    root=tmp_path/'redux/TEST/uvis';state=json.loads((root/'manifest.json').read_text())
+    root=tmp_path/'redux/uvis/TEST';state=json.loads((root/'manifest.json').read_text())
     assert set(state['filters'])=={'F275W','F336W'}
     assert all(r['status']=='complete' for r in state['filters'].values())
     assert [identity(a),identity(b)]==before
-    assert (root/'products/TEST_uvis_report.html').stat().st_size<1_000_000
+    assert (root/'index.html').stat().st_size<1_000_000
 
 def test_nested_catalog_cache_lock_is_reentrant_and_reuses_raw(tmp_path):
     from astropy.table import Table

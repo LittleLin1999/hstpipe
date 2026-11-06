@@ -133,7 +133,9 @@ def _engine(config,paths,exposures,*,prepare_only=False):
                 cache.record('uvis_provisional',provisional_key,[provisional,provisional_inputs])
                 return []
             cross=paths.file('intermediate','alignment','cross_filter')
-            if cross.exists():report['cross_filter_alignment']=json.loads(cross.read_text())
+            if not cross.exists():
+                raise RuntimeError('Cross-filter stage has not run; use reduce_uvis to prepare all filters before absolute calibration')
+            report['cross_filter_alignment']=json.loads(cross.read_text())
             products,assessment=finalize(provisional,copies,rows,paths,opts['astrometry'],opts['drizzle'],relative,opts['target_cr_fraction'])
             report.update(assessment);report['effective_parameters']=opts
             report['stages']['cross_filter_alignment']=report.get('cross_filter_alignment',dict(status='not_applicable'))

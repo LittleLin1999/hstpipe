@@ -270,7 +270,7 @@ def approve_source_review(directory,filter_key,*,reviewer,reason,source_ids,expe
     directory=Path(directory).resolve();manifest=directory/'manifest.json'
     if not reviewer.strip() or not reason.strip():raise ValueError('Reviewer and scientific reason are required')
     state=json.loads(manifest.read_text());record=state['filters'][filter_key]
-    paths=ReductionPaths(directory.parent.parent,state['target'],'uvis',record['filter'],record.get('setup'))
+    paths=ReductionPaths.from_directory(directory,record['filter'],record.get('setup'),target=state['target'])
     if paths.directory!=directory or paths.group_key!=filter_key:raise ValueError('Review must use the target reduction directory and exact filter/setup key')
     with target_lock(directory,filter_key),target_lock(directory):
         state=json.loads(manifest.read_text());record=state['filters'][filter_key];a=record['scientific_assessment'];q=a['source_validation']

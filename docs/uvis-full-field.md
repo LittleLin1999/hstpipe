@@ -150,7 +150,7 @@ receipts. Catalog changes reuse unchanged detector catalogs and backgrounds.
 Changed source quality or relative WCS invalidates affected descendants. Per-filter
 receipts allow selected-filter reruns without reducing unrelated filters.
 
-All paths remain under `redux/{target}/uvis/`, with no filter directories. Tables,
+All paths remain under `redux/uvis/{field}/`, with no filter directories. Tables,
 graphs, masks/cutouts and headerlets use `intermediate/alignment/`; provisional
 and flagged inspection coadds use `intermediate/drizzle/`; diagnostics remain flat, with stage-prefixed filenames. Filter/setup IDs distinguish group files, exposure roots
 distinguish detector files. A shared config/manifest records separate filters.

@@ -91,7 +91,7 @@ def test_publication_preserves_arrays_review_and_previous_product(flc,tmp_path):
     with fits.open(product) as hd:
         assert np.array_equal(hd['SCI'].data,data) and hd[0].header['HPQASTAT']=='VALIDATED'
     assert identity(review)==before
-    backups=list(paths.directory.parent.glob('.uvis-science-before-*/*_drc.fits'))
+    backups=list(paths.directory.parent.glob('.uvis-T-science-before-*/*_drc.fits'))
     assert len(backups)==1 and identity(backups[0])['sha256']==prior['sha256']
 
 def test_no_input_coverage_is_explicit_and_json_safe():

@@ -65,7 +65,10 @@ hstpipe uvis reduce --input raw/uvis --output redux --dry-run
 hstpipe uvis reduce --input raw/uvis --output redux --resume
 ```
 
-Add `--target TARGET --filter F336W` to select one group. A dry run prints the
+Add `--target FIELD --filter F336W` to select one existing named group.
+For a deep field or mosaic spanning different FITS target names, use
+`--field GOODS-S` with an input directory containing that field's exposures.
+Original `TARGNAME` headers are retained; only overlapping footprints combine. A dry run prints the
 plan; it does not validate the scientific result.
 
 The pipeline measures relative alignment using sources on every available CCD,
@@ -73,9 +76,11 @@ then makes a provisional mosaic. Gaia/Legacy absolute alignment is propagated
 back to working FLCs through TweakBack before the final AstroDrizzle pass.
 Final defaults are **0.04 arcsec/pixel** and **pixfrac 0.8**.
 
-Open `redux/{target}/uvis/products/{target}_uvis_report.html` first. It works
-offline and is smaller than 1,000,000 bytes. Published images are named
-`{target}_{filter}_drc.fits`; filters share one target directory.
+Open `redux/uvis/{field}/index.html` first. It works
+offline and is smaller than 1,000,000 bytes. Published images are in
+`redux/uvis/{field}/products/{target}_{filter}_drc.fits`; filters share one target
+directory. Reports stay with their reduction; hstpipe does not create a separate
+top-level `reports/` tree.
 
 A completed command does not guarantee science readiness. A blocked reduction
 keeps diagnostics. **Review image QA** requires inspection; eligible field-source

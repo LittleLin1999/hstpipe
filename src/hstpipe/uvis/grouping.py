@@ -25,10 +25,16 @@ def overlaps(a,b):
             if not separated:return True
     return False
 
-def group_exposures(exposures):
+def group_exposures(exposures,field=None):
     base=defaultdict(list);result={}
     for e in exposures:
-        if e.product=='flc':base[(e.metadata['TARGNAME'],e.metadata['FILTER'])].append(e)
+        if e.product!='flc':continue
+        name=field or e.metadata.get('TARGNAME')
+        if not name:raise ValueError('Missing TARGNAME: set --field or field in the UVIS configuration')
+        from ..common.paths import label
+        try:label(name)
+        except ValueError as exc:raise ValueError('Set a filesystem-safe --field for these observations') from exc
+        base[(name,e.metadata['FILTER'])].append(e)
     for (target,filt),rows in base.items():
         components=[]
         for e in rows:
@@ -40,6 +46,6 @@ def group_exposures(exposures):
             import hashlib,json
             fingerprint=json.dumps(sorted(e.metadata['ROOTNAME'] for e in c)).encode()
             setup='field-'+hashlib.sha256(fingerprint).hexdigest()[:8] if len(components)>1 else None
-            for e in c:e.metadata['grouping_reason']='same target/filter; connected WCS footprints; no visit/proposal split'+('; disjoint field separated' if setup else '')
+            for e in c:e.metadata['grouping_reason']=('explicit field/filter' if field else 'same TARGNAME/filter')+'; connected WCS footprints; no visit/proposal split'+('; disjoint field separated' if setup else '')
             result[(target,filt,setup)]=c
     return result

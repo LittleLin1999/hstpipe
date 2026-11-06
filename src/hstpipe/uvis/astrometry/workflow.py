@@ -131,6 +131,12 @@ def annotate_astrometry(path,solution,validation,relative):
             h.header['ASTNREF']=validation['matched'];h.header['ASTEPCH']=(solution['observation_epoch'],'Julian year of effective HST epoch')
             h.header['ASTRMS']=(validation['rms_arcsec'],'RMS residual in arcsec; see ASTNREF')
             h.header['ASTWCS']=solution['corrected_wcs_name'];h.header['HPPASS']='FINAL'
+            h.header['ASTGEO']=(solution.get('fit_geometry','shift'),'Accepted WCS fit geometry')
+            if solution['reference_mode']=='cross_filter':
+                h.header['XFANCHOR']=(solution.get('cross_filter_alignment',{}).get('anchor_group','unknown'),'Parent filter for internal HST frame transfer')
+                if validation.get('relative_to_anchor_rms_arcsec') is not None:h.header['XFRMS']=(validation['relative_to_anchor_rms_arcsec'],'RMS vs HST parent, arcsec')
+                inherited=solution.get('inherited_absolute_validation') or {}
+                if inherited.get('uncertainty_arcsec') is not None:h.header['ASTABSER']=(inherited['uncertainty_arcsec'],'Inherited parent absolute uncertainty, arcsec')
             h.header['ASTREL']=relative['status']
             if solution.get('correction_applied',False):h.header.add_history('Absolute reference correction propagated to FLC copies with STScI TweakBack before final AstroDrizzle')
             else:h.header.add_history('Existing exposure WCS validated against external reference; no TweakBack correction was needed')
@@ -204,8 +210,11 @@ def finalize(provisional,relative_inputs,rows,paths,options,drizzle_options,rela
                 for f in work.glob('*.log'):paths.copy(f,paths.file('logs',None,f.stem,'log'))
             finally:os.chdir(previous)
         if solution['reference_mode']=='cross_filter':
-            from .sources import sources
-            detected=sources(final,options['relative']['detection'],True,6,paths=paths,label='final_sources')
+            from .cross_filter import cross_sources
+            cross_options=options
+            if solution.get('cross_filter_alignment',{}).get('source_selection')=='DAO_stellar_fallback':
+                cross_options=dict(options,cross_filter=dict(options['cross_filter'],source_method='dao'))
+            detected=cross_sources(final,cross_options)
         else:detected=detect_sources(final,options['detection'],paths=paths,label='final_sources')
         validation,matched=validate(detected,reference,solution['thresholds'],science_shape(final))
         validation['independence']='Final image residuals can reuse source-identification/fit objects; no held-out absolute accuracy is claimed'

@@ -31,7 +31,7 @@ def _destination(paths,rel):
         stage='working' if rel.name.endswith('_flc.fits') else p[1]
         if stage not in ('catalogs','background','alignment','drizzle','working'):stage='alignment'
         return paths.area('intermediate',stage)/rel.name
-    if len(p)==1 and p[0] not in ('config.yaml','manifest.json'):
+    if len(p)==1 and p[0] not in ('config.yaml','manifest.json','index.html'):
         return paths.area('intermediate','alignment')/rel.name
     return paths.directory/rel
 
@@ -94,7 +94,7 @@ def migrate_target(directory):
     nested|=any((directory/'intermediate/alignment').glob('*_flc.fits'))
     if not nested:return {'status':'already_shallow'}
     with target_lock(directory):
-        state=json.loads((directory/'manifest.json').read_text());paths=ReductionPaths(directory.parent.parent,state['target'],'uvis','layout')
+        state=json.loads((directory/'manifest.json').read_text());paths=ReductionPaths.from_directory(directory,'layout',target=state['target'])
         files=[p for p in directory.rglob('*') if p.is_file()];plan={};owners={};verified={}
         for key,r in state.get('filters',{}).items():
             group=ReductionPaths(paths.root,paths.target,'uvis',r['filter'],r.get('setup'));old=StageCache(directory/'.cache'/group.group_id)

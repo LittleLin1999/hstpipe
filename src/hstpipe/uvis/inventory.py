@@ -20,7 +20,7 @@ def validate_flc(path):
         p=hd[0].header;m={k:p.get(k) for k in FIELDS}; warnings=[]
         if (m['INSTRUME'],m['DETECTOR'],m['OBSTYPE'])!=('WFC3','UVIS','IMAGING'):
             raise ValueError(f'Not WFC3 UVIS imaging: {path}')
-        if not m['FILTER'] or not m['TARGNAME'] or not m['EXPTIME'] or m['EXPTIME']<=0:
+        if not m['FILTER'] or not m['EXPTIME'] or m['EXPTIME']<=0:
             raise ValueError(f'Missing science identity/exposure time: {path}')
         for k in ('BIASCORR','BLEVCORR','DARKCORR','FLATCORR','PCTECORR','PHOTCORR','DQICORR'):
             if m[k]!='COMPLETE': warnings.append(f'{k}={m[k]} (expected COMPLETE)')

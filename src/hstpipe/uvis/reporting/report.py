@@ -131,6 +131,7 @@ def _summary(key,record,workflow_error=None,astrometry_context=None):
         value=stages.get(name,{})
         if name=='target_specific_alignment':value=local or {'status':'not_attempted'}
         if name=='relative_alignment' and not value:value=rel
+        if name=='cross_filter_alignment' and not value:value=a.get('cross_filter_alignment',{})
         if name=='absolute_alignment' and not value:value=a.get('astrometry',{})
         if name=='tweakback' and not value:value=a.get('tweakback',{})
         if name=='final_drizzle' and not value:value={'status':'complete' if record.get('products') else 'not_produced'}
@@ -207,6 +208,7 @@ def _figures(paths,filters,budget=650_000,descriptions=None):
     files=list(paths.area('diagnostics').glob('*.png'))+list(paths.area('diagnostics').glob('*.jpg'))
     def rank(p):
         text=p.name.lower()
+        if 'cross_filter_sources' in text:return (-5,0,p.name)
         if 'centroid_recovery' in text:return (-4,0,p.name)
         return (-3 if 'source_validation' in text else (-2 if 'absolute_references' in text else (-1 if 'stellar_association' in text else (0 if any(x in text for x in ('identity','rejected','coadd','relative_sources')) else 1))),
                 0 if any(x in text for x in ('target','weight','coverage')) else 1,p.name)
@@ -321,12 +323,12 @@ def _review_figures(filters,budget):
 def generate_report(directory):
     directory=Path(directory);statefile=directory/'manifest.json'
     state=json.loads(statefile.read_text())
-    paths=ReductionPaths(directory.parent.parent,state['target'],'uvis','report')
+    paths=ReductionPaths.from_directory(directory,'report',target=state['target'])
     filters=state.get('filters',{})
     from .astrometry import context,table,_kind
     contexts={}
     for key,record in filters.items():
-        group_paths=ReductionPaths(directory.parent.parent,state['target'],'uvis',record.get('filter',key),record.get('setup'))
+        group_paths=ReductionPaths.from_directory(directory,record.get('filter',key),record.get('setup'),target=state['target'])
         if not state.get('workflow_error'):contexts[key]=context(group_paths,record)
     ready=bool(filters) and all(r.get('products') and r.get('scientific_assessment',{}).get('status')=='science_ready' for r in filters.values())
     title=state['target']+' UVIS reduction'
@@ -336,6 +338,8 @@ def generate_report(directory):
     head='<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>'+_escape(title)+'</title><style>'+css+'</style><body><h1>'+_escape(title)+'</h1>'
     head+='<p><strong>'+str(count)+' of '+str(len(filters))+' filters science-ready.</strong> '+('All recorded filters passed.' if ready else 'Use ready filters; the others need attention.')+'</p>'
     head+='<h2>Results</h2>'+table(('Filter','Science status','Relative alignment','Absolute check','What this means'),[overview_row(k,r) for k,r in sorted(filters.items())])
+    from .astrometry import cross_filter_summary
+    head+=cross_filter_summary(filters,state.get('workflow_error'))
     attention=[]
     for k,r in sorted(filters.items()):
         if not filter_ready(r):
@@ -376,6 +380,15 @@ def generate_report(directory):
     temp=output.with_suffix('.html.tmp');temp.write_bytes(data);os.replace(temp,output)
     state['report']=dict(path=str(output),bytes=len(data),limit_bytes=LIMIT,self_contained=True,embedded_figures=len(figures)+comparison_count+review_count,review_source_figures=review_count,alignment_source_pairs=comparison_count,astrometric_details_embedded=True,science_readiness='ready' if ready else 'review_required')
     save(statefile,state)
+    # Preserve old bookmarks without maintaining a second report. New runs
+    # create only index.html; existing legacy reports become relative aliases.
+    legacy=paths.area('products')/f'{paths.target}_uvis_report.html'
+    if legacy.exists() or legacy.is_symlink():
+        import tempfile
+        with tempfile.TemporaryDirectory(prefix='.report-link-',dir=legacy.parent) as work:
+            alias=Path(work)/legacy.name
+            alias.symlink_to('../index.html')
+            os.replace(alias,legacy)
     return output
 
 

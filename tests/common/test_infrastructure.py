@@ -86,4 +86,4 @@ def test_force_rebuilds_even_with_resume(tmp_path):
         calls.append(True);p=paths.area('products',create=True)/'result.txt';p.write_text(str(len(calls)));return [p]
     run(c,engine);c.force=True;run(c,engine)
     assert len(calls)==2
-    assert list((tmp_path/'redux/TEST').glob('.uvis-history-TEST_F606W-*'))
+    assert list((tmp_path/'redux/uvis').glob('.uvis-TEST-history-TEST_F606W-*'))

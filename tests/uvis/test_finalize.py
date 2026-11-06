@@ -65,7 +65,7 @@ def test_report_after_success_or_failure_is_offline_and_bounded(tmp_path,status)
     paths=ReductionPaths(tmp_path,'T','uvis','F275W')
     save(paths.directory/'manifest.json',dict(target='T',filters={'F275W':dict(status=status,error='masked source core' if status=='failed' else '',products=[],inputs=[])}))
     p=generate_report(paths.directory);data=p.read_bytes()
-    assert 0<len(data)<1_000_000 and p.name=='T_uvis_report.html'
+    assert 0<len(data)<1_000_000 and p==paths.directory/'index.html'
     assert b'<link' not in data and b'<script src' not in data
     assert status.encode() in data
     assert json.loads((paths.directory/'manifest.json').read_text())['report']['bytes']==len(data)
@@ -109,7 +109,7 @@ def test_invalid_target_does_not_block_another_and_raw_is_immutable(flc,tmp_path
     cfg=ReductionConfig(str(raw),str(tmp_path/'redux'),'uvis',options=settings({}),resume=True)
     run_uvis(cfg,engine,_retry_anchors=False)
     assert calls==['A'] and all(identity(p)==d for p,d in before.items())
-    for target in ('A','B'):assert (tmp_path/f'redux/{target}/uvis/products/{target}_uvis_report.html').exists()
+    for target in ('A','B'):assert (tmp_path/f'redux/uvis/{target}/index.html').exists()
 
 @pytest.mark.parametrize('chips',[(1,2),(7,)])
 def test_full_field_sources_and_catalogs_on_every_sci(flc,tmp_path,chips):

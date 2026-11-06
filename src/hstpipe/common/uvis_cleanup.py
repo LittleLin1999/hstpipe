@@ -16,8 +16,8 @@ COMPARISONS = ('joint_existing_inspection', 'joint_candidate_inspection',
 
 
 def _groups(root, target):
-    manifests = ([root / 'manifest.json'] if root.name == 'uvis' else
-                 sorted(root.rglob('uvis/manifest.json')))
+    manifests = ([root / 'manifest.json'] if (root/'manifest.json').is_file() else
+                 sorted(set(root.rglob('uvis/manifest.json')) | set(root.rglob('uvis/*/manifest.json'))))
     groups = []
     for manifest in manifests:
         if not manifest.is_file() or manifest.is_symlink():
@@ -29,8 +29,7 @@ def _groups(root, target):
         if state.get('schema_version') != 2 or (target and state.get('target') != target):
             continue
         for key, record in state.get('filters', {}).items():
-            paths = ReductionPaths(manifest.parent.parent.parent, state['target'],
-                                   'uvis', record['filter'], record.get('setup'))
+            paths = ReductionPaths.from_directory(manifest.parent, record['filter'], record.get('setup'), target=state['target'])
             if paths.directory != manifest.parent or paths.group_key != key:
                 raise ValueError(f'Inconsistent group path in {manifest}: {key}')
             groups.append((paths, record))

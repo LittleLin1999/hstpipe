@@ -39,6 +39,33 @@ hstpipe uvis reduce --config configs/uvis.yaml --resume
 readiness. `--resume` verifies cached outputs before reusing them. YAML paths are
 relative to the YAML file; command-line paths are relative to the current directory.
 
+### Fields and deep mosaics
+
+A field is an output region, not necessarily an individual source. New UVIS
+reductions use `redux/uvis/{field}/`. Set one name for an explicitly selected
+collection of exposures, even if their original `TARGNAME` headers differ or
+are missing:
+
+```bash
+hstpipe uvis reduce --input raw/goods-s --output redux --field GOODS-S --resume
+```
+
+In YAML, set `field: GOODS-S` at the top level. The field applies to all exposures
+in the input directory; `--filter` can restrict the filter selection. Exposures
+still must have connected WCS footprints within each filter. Disconnected groups
+receive distinct setup identifiers and are never silently coadded. Original
+`TARGNAME` values remain in the FITS and observing metadata. `--target`, when
+used with `--field`, selects that output field and must match its name.
+
+Without `field`, the existing TARGNAME-based grouping is retained. Missing or
+filesystem-unsafe TARGNAME values require an explicit safe field name. Existing
+`redux/{target}/uvis/` reductions resume in place. Separate legacy and new trees
+for the same field cause an explicit ambiguity error; neither is overwritten.
+Report/review/cleanup commands accept both layouts. Historical collection views
+are for navigation, not inputs to resume or approval. A field directory marked
+with `publication.json` is protected from reduction writes; follow its recorded
+source reduction to resume work, or choose a fresh output root.
+
 ### What the pipeline does
 
 | Step | Purpose |
@@ -47,6 +74,7 @@ relative to the YAML file; command-line paths are relative to the current direct
 | Assess background and detect sources | Measure reliable native-pixel centroids on all available CCDs. |
 | Register exposures | Validate existing relative WCS; refine when justified, with a local fallback if needed. |
 | Make a provisional mosaic | Run AstroDrizzle with the accepted relative registration. |
+| Register filters | Match provisional mosaics using HST centroids; retain adequate WCS or validate a TweakReg correction. |
 | Establish absolute astrometry | Use Gaia DR3 or Legacy Surveys; transfer between filters only when validated. |
 | Propagate and drizzle again | Use TweakBack on working FLCs, then a new final AstroDrizzle pass. |
 | Validate and report | Check final WCS, source preservation, CR rejection, and coverage. |
@@ -57,7 +85,7 @@ correction, or second pixel-area-map correction is applied.
 
 ## Read the result
 
-Open `products/{target}_uvis_report.html` inside the target's reduction directory.
+Open `index.html` inside the target's reduction directory.
 It is self-contained, works offline, and stays below **1,000,000 bytes**.
 Start with the filter summary, then open only the filters needing attention.
 
@@ -113,10 +141,10 @@ If astrometry and other image checks already pass, an explicitly reviewed
 
 ```bash
 # Preview the current image and flagged sources; no approval is made.
-hstpipe uvis review --directory /data/redux/TARGET/uvis --filter F336W
+hstpipe uvis review --directory /data/redux/uvis/FIELD --filter F336W
 
 # After inspecting the current report, accept the listed field-source flux flags.
-hstpipe uvis review --directory /data/redux/TARGET/uvis --filter F336W \
+hstpipe uvis review --directory /data/redux/uvis/FIELD --filter F336W \
   --approve --reviewer "Your name" \
   --reason "Reviewed the field-source core-flux discrepancy; acceptable for my target analysis."
 ```
@@ -159,11 +187,11 @@ the new file's checksum. Keep the original review evidence on the server.
 ## Output layout
 
 ```text
-redux/{target}/
-  stis/{grating}/                # unchanged
-  uvis/
+redux/
+  {target}/stis/{grating}/       # existing STIS layout
+  uvis/{field}/
     products/{target}_{filter}[_setup]_drc.fits
-    products/{target}_uvis_report.html
+    index.html                  # start here: offline reduction and QA report
     intermediate/
       catalogs/                 # shared Gaia/Legacy cached cones and provenance
       background/               # rootname sky models and masks
@@ -175,6 +203,26 @@ redux/{target}/
     config.yaml
     manifest.json
 ```
+
+Each target has one report, next to its configuration and manifest. Final science
+FITS belong in `products/`; reusable reduction files belong in `intermediate/`;
+QA tables/plots and processing logs belong in `diagnostics/` and `logs/`.
+The package does not create a separate top-level `reports/` or `redux_reports/`
+collection. Those names in older workspaces came from external collection scripts.
+STIS retains its grating-specific output layout.
+
+Refresh an existing UVIS report without rerunning science processing:
+
+```bash
+hstpipe uvis report --directory /data/redux/uvis/FIELD
+```
+
+This writes `index.html` and updates the manifest's report metadata. If the old
+`products/{target}_uvis_report.html` exists, it becomes a relative symlink to
+`../index.html`, preserving old bookmarks without duplicate report contents.
+New reductions create only `index.html`. FITS files, scientific assessments and
+stage receipts are not changed by this command. External report collections are
+not automatically moved or removed.
 
 There are no filter or mandatory setup directories. Group files and diagnostic
 plots include target/filter/setup identifiers; exposure files use ROOTNAME.
@@ -292,7 +340,7 @@ hstpipe uvis migrate --output redux
 ```
 
 Migration preflights conflicts and configuration differences before changing files.
-Original trees remain in `{target}/.uvis-legacy-*`. FITS files are verified
+Original trees remain in `{target}/.uvis-legacy-*` for legacy migrations. FITS files are verified
 byte-for-byte and linked rather than duplicated. Subsequent writes replace
 inodes atomically so recovery links remain intact. Small text/config/provenance
 files are independent and paths are remapped. Valid legacy receipts are converted
@@ -319,3 +367,59 @@ real TweakBack/final-drizzle measurements, and unresolved scientific checks.
 
 See [mandatory relative registration](uvis-relative.md) for strategies, precision
 criteria, configuration and retained diagnostic products.
+
+
+### Cross-filter registration
+
+After within-filter registration and provisional drizzle, `align_cross_filters`
+measures every available filter pair using stable compact HST centroids. The
+existing STScI histogram matcher and constrained model selection compare shifts,
+fixed-scale rotation and, only when justified, uniform scale. Predictive
+leave-one-source-out checks are required; a one-source numerical fit is not
+independent cross-filter validation. Accuracy ceilings are unchanged.
+
+The anchor is selected by reliable connections rather than source count alone.
+A filter can connect through an intermediate filter; disconnected groups retain
+separate frames. Parent filters complete absolute calibration before their
+children. The saved HST source pairs and selected geometry transfer the parent's
+validated absolute WCS, preserving the original provisional WCS for TweakBack.
+Final AstroDrizzle is rerun from corrected FLC working copies. Original FLCs are
+never edited. Final-image residuals are checked again before publication.
+
+`cross_filter.source_method` defaults to `compact_stable`: two-kernel stable compact
+centroids. If their pairwise registration is unsupported, existing DAO stellar
+centroids are tested separately. A supported primary solution is retained; the
+code does not choose whichever detector produces the smallest training RMS. `cross_filter.detection` can override detection settings.
+Pair tables, rejected model alternatives, original-frame signatures and source
+cutouts are under the existing shallow alignment/diagnostic directories. The
+HTML report distinguishes internal fit acceptance, disconnected filter groups
+and actual final absolute-frame transfer. A failed connection does not erase an
+existing individually calibrated product or establish a common multi-filter frame.
+
+To refine an existing reduction without repeating background or within-filter
+registration, use `hstpipe.uvis.astrometry.resume_cross_filters(target_uvis_dir)`.
+It verifies saved FLC identities, keeps existing validated absolute anchors,
+processes dependent filters in order, and reruns TweakBack/final AstroDrizzle only
+for accepted connections. Failed candidates are reported separately and do not
+replace published products. The report is regenerated even on failure.
+
+```python
+from hstpipe.uvis.astrometry import align_cross_filters, resume_cross_filters
+
+# Assess only: preserve provisional and final FITS.
+results = align_cross_filters("redux/uvis/FIELD")
+
+# Apply validated transfers, TweakBack and final drizzle from saved checkpoints.
+results = resume_cross_filters("redux/uvis/FIELD")
+```
+
+Ordinary `hstpipe uvis reduce --resume` includes this sequence automatically.
+Use `astrometry.cross_filter.reference_filter` to specify an available anchor;
+`auto` selects it by reliable common-source connections. `common_grid: true`
+optionally requests the parent's output grid during the final detector-frame
+drizzle; it does not resample an already drizzled science image.
+
+Before replacing an existing final DRC, the focused resume also checks that
+reviewed image directly against the validated parent filter. If it already meets
+the cross-filter accuracy requirements, its pixels, WCS and review are retained
+unchanged. This does not approve a new candidate that failed image QA.

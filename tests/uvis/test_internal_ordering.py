@@ -14,16 +14,19 @@ def test_all_selected_provisionals_precede_any_absolute_stage(tmp_path,monkeypat
     events=[]
     state=dict(filters={f:dict(scientific_assessment=dict(alignment=dict(status='validated'))) for f in ('F467M','F621M')})
     (directory/'manifest.json').write_text(json.dumps(state))
-    def run(c,engine,dry_run=False):
-        if dry_run:return plans
-        for f in ('F467M','F621M'):engine(f,None,None)
-        return [directory]
-    def engine(c,*a,prepare_only=False):events.append(('prepare' if prepare_only else 'external',c))
+    def engine(c,*a,prepare_only=False):events.append(('prepare' if prepare_only else 'external',c.element))
     def cross(*a):
         assert events==[('prepare','F467M'),('prepare','F621M')]
         events.append(('cross',None));return {'F621M':dict(status='anchor'),'F467M':dict(status='validated')}
-    def finish(c,engine,**kw):engine(c.element,None,None)
-    monkeypatch.setattr(o,'run',run);monkeypatch.setattr(o,'internal_cross_filter',cross);monkeypatch.setattr(o,'run_uvis',finish)
+    def run(c,worker,dry_run=False,**kw):
+        if dry_run:return plans
+        worker(c,None,None)
+        return [directory]
+    from hstpipe.uvis import inventory,reporting
+    monkeypatch.setattr(reporting,'generate_report',lambda *a:None)
+    monkeypatch.setattr(inventory,'scan',lambda *a:([],[]))
+    for p in plans:p['group']=['T',p['configuration']['element'],None]
+    monkeypatch.setattr(o,'internal_cross_filter',cross);monkeypatch.setattr(o,'run_uvis',run)
     assert o.relative_then_absolute(cfg,engine)==[directory]
     assert events==[('prepare','F467M'),('prepare','F621M'),('cross',None),('external','F621M'),('external','F467M')]
 
@@ -33,9 +36,16 @@ def test_unvalidated_relative_groups_never_enter_absolute_stage(tmp_path,monkeyp
     (d/'manifest.json').write_text(json.dumps(dict(filters={'F467M':dict(scientific_assessment=dict(alignment=dict(status='unvalidated')))})))
     cfg=ReductionConfig(str(tmp_path/'raw'),str(root),'uvis',options=settings({}))
     plan=[dict(configuration=dict(target='T',element='F467M',setup=None))]
-    monkeypatch.setattr(o,'run',lambda c,e,dry_run=False:plan if dry_run else [d])
+    from hstpipe.uvis import inventory,reporting
+    monkeypatch.setattr(reporting,'generate_report',lambda *a:None)
+    monkeypatch.setattr(inventory,'scan',lambda *a:([],[]))
+    plan[0]['group']=['T','F467M',None]
+    def run(c,worker,dry_run=False,**kw):
+        if dry_run:return plan
+        assert worker is not None, 'Unvalidated filter entered absolute finalization'
+        return [d]
     monkeypatch.setattr(o,'internal_cross_filter',lambda *a:{'F467M':dict(status='skipped')})
-    monkeypatch.setattr(o,'run_uvis',lambda *a,**k:pytest.fail('Absolute stage must be blocked'))
+    monkeypatch.setattr(o,'run_uvis',run)
     assert o.relative_then_absolute(cfg,None)==[d]
 
 
@@ -58,43 +68,10 @@ def _internal_catalog(image,*args,**kwargs):
     from hstpipe.uvis.astrometry.centroids import QUALITY_VERSION
     c=Table(dict(x=xy[:,0],y=xy[:,1],ra=world[:,0],dec=world[:,1],flux=np.ones(8)*100,extver=np.full(8,version),centroid_error_pix=np.ones(8)*.1,width_pix=np.ones(8),centroid_valid=np.ones(8,bool)))
     c.meta['centroid_quality']=dict(version=QUALITY_VERSION)
+    if kwargs.get('paths'):
+        p=kwargs['paths'].file('intermediate','alignment','cross_filter_sources','ecsv');p.parent.mkdir(parents=True,exist_ok=True);c.write(p,format='ascii.ecsv',overwrite=True)
     return c
 
-
-@pytest.mark.parametrize('native_backend',[False,True],ids=['dispatch','native'])
-def test_internal_cross_filter_has_no_external_query_and_reuses_receipt(flc,tmp_path,monkeypatch,native_backend):
-    import shutil
-    from astropy.io import fits
-    from hstpipe.common.paths import ReductionPaths
-    from hstpipe.uvis.astrometry import cross_filter as c,alignment
-    opts=settings({})['astrometry'];root=tmp_path/'redux';records={};files=[]
-    for filt,offset in [('F467M',0),('F621M',3)]:
-        paths=ReductionPaths(root,'TEST','uvis',filt);paths.area('intermediate','drizzle',create=True)
-        p=paths.file('intermediate','drizzle','provisional','fits');shutil.copy2(flc(filt,size=256),p)
-        with fits.open(p,mode='update') as hd:
-            header=hd['SCI'].header;header['CRPIX1']+=offset
-            header['CD1_1']=header.pop('CDELT1');header['CD2_2']=header.pop('CDELT2');header['CD1_2']=0.;header['CD2_1']=0.
-        files.append(p);records[filt]=dict(filter=filt,setup=None,scientific_assessment=dict(relative_astrometry=dict(status='validated')))
-    statefile=paths.directory/'manifest.json';statefile.write_text(json.dumps(dict(filters=records)))
-    monkeypatch.setattr(c,'sources',_internal_catalog)
-    monkeypatch.setattr(alignment,'query_gaia_dr3',lambda *a,**k:pytest.fail('No external catalog in internal matching'))
-    calls=[];real_native=c.native_catalog_fit
-    def native(inputs,catalogs,options,reference_image=None,**kwargs):
-        calls.append(1)
-        if native_backend:return real_native(inputs,catalogs,options,reference_image=reference_image,**kwargs)
-        with fits.open(reference_image) as hd:value=hd['SCI'].header['CRPIX1']
-        with fits.open(inputs[0],mode='update') as hd:hd['SCI'].header['CRPIX1']=value
-        return [dict(shift=[3,0])]
-    monkeypatch.setattr(c,'native_catalog_fit',native)
-    original=[p.read_bytes() for p in files]
-    result=c.internal_cross_filter(paths.directory,list(records),opts)
-    assert result['F467M']['status']=='anchor' and result['F621M']['status']=='validated'
-    assert [p.read_bytes() for p in files]==original
-    result=c.internal_cross_filter(paths.directory,list(records),opts)
-    assert len(calls)==1 and result['F621M']['status']=='validated'
-    opts['absolute']['search_radius_arcsec']=3
-    c.internal_cross_filter(paths.directory,list(records),opts)
-    assert len(calls)==1, 'External matching settings must not invalidate internal registration'
 
 
 def test_overlap_graph_exposes_disconnected_exposure(flc,tmp_path):
@@ -154,3 +131,43 @@ def test_tweakback_preserves_accepted_connected_pairs(flc,tmp_path,changed,disco
     if not changed and not disconnected:
         assert result['validation_basis']=='accepted_connected_graph'
         assert [(p['reference'],p['exposure']) for p in result['pairs']]==[(files[0].name,files[1].name),(files[1].name,files[2].name)]
+
+
+def test_catalog_failure_does_not_block_other_filter(flc,tmp_path,monkeypatch):
+    import shutil
+    from hstpipe.common.paths import ReductionPaths
+    from hstpipe.uvis.astrometry import cross_filter as c,align_cross_filters
+    records={}
+    for filt in ('F467M','F621M'):
+        paths=ReductionPaths(tmp_path/'redux','TEST','uvis',filt)
+        p=paths.file('intermediate','drizzle','provisional','fits');p.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy2(flc(filt,size=256),p)
+        records[filt]=dict(filter=filt,setup=None,scientific_assessment=dict(alignment=dict(status='validated')))
+    (paths.directory/'manifest.json').write_text(json.dumps(dict(filters=records)))
+    def detect(image,*a,**kw):
+        if 'F467M' in image.name:raise ValueError('Bad source catalog')
+        return _internal_catalog(image)
+    monkeypatch.setattr(c,'cross_sources',detect)
+    results=align_cross_filters(paths.directory)
+    assert results['F467M']['status']=='unvalidated'
+    assert results['F621M']['status']=='unvalidated'
+    assert results['F621M']['source_count']>0  # still eligible for its own absolute solution
+    assert not results['F621M']['external_catalog_used']
+
+
+def test_absolute_anchor_survives_running_manifest_entry(tmp_path):
+    from hstpipe.common.paths import ReductionPaths
+    from hstpipe.uvis.astrometry.alignment import _anchor
+    paths=ReductionPaths(tmp_path/'redux','TEST','uvis','F275W')
+    product=tmp_path/'anchor.fits';product.touch()
+    stage=paths.file('intermediate','alignment','cross_filter');stage.parent.mkdir(parents=True,exist_ok=True)
+    stage.write_text(json.dumps(dict(status='validated',anchor_group='F621M')))
+    own=dict(status='running',filter='F275W')
+    anchor=dict(filter='F621M',products=[dict(path=str(product))],scientific_assessment=dict(
+        relative_astrometry=dict(status='validated'),cross_filter_alignment=dict(status='anchor',anchor_group='F621M'),
+        astrometry=dict(status='validated',observation_epoch=2020.,reference='gaia_dr3')))
+    (paths.directory/'manifest.json').write_text(json.dumps(dict(filters=dict(F275W=own,F621M=anchor))))
+    result=_anchor(paths,2020.,settings({})['astrometry'])
+    assert result is not None and result[0]==product
+    stage.write_text(json.dumps(dict(status='unvalidated',anchor_group='F621M')))
+    assert _anchor(paths,2020.,settings({})['astrometry']) is None

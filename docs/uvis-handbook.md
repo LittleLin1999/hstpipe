@@ -142,8 +142,9 @@ the current implementation.
 ## Shallow files, restart and reports
 
 ```text
-redux/{target}/uvis/
-  products/          # target_filter_drc.fits; target_uvis_report.html
+redux/uvis/{field}/
+  index.html         # offline reduction and QA report; start here
+  products/          # target_filter_drc.fits
   intermediate/
     catalogs/        # shared Gaia/Legacy raw/normalized tables and flat receipts
     background/      # root_sky.fits, root_mask.fits, optional amplifier models

@@ -15,8 +15,14 @@ class ReductionConfig:
     resume: bool = False
     force: bool = False
     filter_overrides: dict = field(default_factory=dict)
+    field: str | None = None
 
     def __post_init__(self):
+        if self.field is not None:
+            from .paths import label
+            label(self.field)
+            if self.instrument!='uvis':raise ValueError('Explicit field grouping is supported for UVIS only')
+            if self.target not in (None,self.field):raise ValueError('--target selects the output field; with --field it must match that field')
         self.input=str(Path(self.input).expanduser().resolve())
         self.output=str(Path(self.output).expanduser().resolve())
         if self.instrument not in ('stis','uvis'):raise ValueError('instrument must be stis or uvis')
@@ -56,5 +62,6 @@ class ReductionConfig:
 
     def effective(self):
         data=asdict(self)
+        if self.field is None:data.pop('field')
         if self.instrument=='stis':data.pop('filter_overrides',None)
         return data

@@ -63,3 +63,23 @@ def test_accepted_existing_wcs_is_not_hidden_by_rejected_joint_proposal(tmp_path
  assert 'Used in accepted relative fit / frame validation' in text
  assert 'joint correction below was proposed and rejected' in text
  assert '0 / 0 (retained)' in text and 'Not applied; existing WCS retained' in text
+
+
+def test_cross_filter_summary_exposes_independent_absolute_fit(tmp_path):
+ from hstpipe.uvis.reporting.astrometry import cross_filter_summary
+ a=dict(cross_filter_alignment=dict(status='unvalidated',anchor_group='F621M',reason='No reliable common-source transformation',before=dict(status='unreliable_fit',matched=6,robust_inliers=6,initial_rms_pix=1.255,postfit_scatter_pix=1.256,scatter_limit_pix=.77)),astrometry=dict(status='validated',reference_mode='legacy_dr10'))
+ text=cross_filter_summary({'F689M':dict(scientific_assessment=a)})
+ assert 'Cross-filter alignment' in text and 'FAIL' in text and '6 / 6' in text
+ assert '1.256' in text and 'scatter exceeds 0.770 pix' in text
+ assert 'Independent absolute fit' in text and 'final cross-filter offsets not measured' in text
+ a['cross_filter_alignment']['status']='validated';a['astrometry']['reference_mode']='cross_filter'
+ assert 'Shared frame transferred' in cross_filter_summary({'F689M':dict(scientific_assessment=a)})
+ assert 'NOT RECORDED' in cross_filter_summary({'F689M':{}},'Workflow failed')
+
+
+def test_cross_filter_section_is_visible_in_generated_report(tmp_path):
+ paths=ReductionPaths(tmp_path,'T','uvis','F621M')
+ save(paths.directory/'manifest.json',dict(target='T',filters={'F621M':dict(filter='F621M',scientific_assessment=dict(cross_filter_alignment=dict(status='anchor',anchor_group='F621M')))}))
+ report=generate_report(paths.directory);text=report.read_text()
+ assert text.index('<h2>Cross-filter alignment</h2>')<text.index('<h2>Filter details</h2>')
+ assert len(report.read_bytes())<1_000_000

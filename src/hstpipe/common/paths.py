@@ -16,10 +16,31 @@ class ReductionPaths:
     element: str
     setup: str | None = None
     _files: set = field(default_factory=set,compare=False,repr=False)
+    _directory: Path | None = field(default=None,compare=False,repr=False)
+    @classmethod
+    def from_directory(cls,directory,element,setup=None,target=None):
+        directory=Path(directory)
+        if target is None:
+            target=directory.name if directory.parent.name=='uvis' else directory.parent.name
+        root=directory.parent.parent
+        if directory not in (root/'uvis'/label(target),root/label(target)/'uvis'):
+            raise ValueError('Use the actual uvis/FIELD reduction directory (legacy FIELD/uvis is also supported)')
+        return cls(root,target,'uvis',element,setup,_directory=directory)
     @property
     def directory(self):
+        if self._directory is not None:return Path(self._directory)
         p=Path(self.root)/label(self.target)/label(self.instrument)
-        if self.instrument=='uvis':return p
+        if self.instrument=='uvis':
+            current=Path(self.root)/'uvis'/label(self.target)
+            if (current/'publication.json').is_file():
+                raise ValueError(f'{current} is a published-results view; use its recorded source reduction for resume, or choose a new output root')
+            # Existing reductions resume in place. Never choose silently
+            # between two independent trees with the same field name.
+            if p.exists():
+                if current.exists() and p.resolve()!=current.resolve():
+                    raise ValueError(f'Ambiguous legacy/current UVIS field directories: {p} and {current}')
+                return p
+            return current
         p=p/label(self.element)
         return p/label(self.setup) if self.setup else p
     @property
@@ -36,13 +57,13 @@ class ReductionPaths:
         from .cache import StageCache
         return StageCache(self.cache_directory,prefix=self.group_id+'_cache_' if self.instrument=='uvis' else '')
     def report(self):
-        return self._file(self.area('products')/f'{label(self.target)}_uvis_report.html')
+        return self._file(self.directory/'index.html')
     def scratch(self,prefix='run-'):
         """Ephemeral native-tool workspaces live outside the reduction tree."""
         import tempfile
         return tempfile.TemporaryDirectory(prefix='hstpipe-'+prefix)
     def recovery_directory(self,tag):
-        return self.directory.with_name('.uvis-'+label(tag))
+        return self.directory.with_name('.uvis-'+(label(self.target)+'-' if self.directory.parent.name=='uvis' else '')+label(tag))
     def area(self,name,stage=None,create=False):
         if name not in ('products','intermediate','diagnostics','logs'):raise ValueError(name)
         p=self.directory/name

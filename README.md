@@ -78,7 +78,7 @@ Final defaults are **0.04 arcsec/pixel** and **pixfrac 0.8**.
 
 Open `redux/uvis/{field}/index.html` first. It works
 offline and is smaller than 1,000,000 bytes. Published images are in
-`redux/uvis/{field}/products/{target}_{filter}_drc.fits`; filters share one target
+`redux/uvis/{field}/products/{field}_{filter}_drc.fits`; filters share one field
 directory. Reports stay with their reduction; hstpipe does not create a separate
 top-level `reports/` tree.
 

@@ -190,7 +190,7 @@ the new file's checksum. Keep the original review evidence on the server.
 redux/
   {target}/stis/{grating}/       # existing STIS layout
   uvis/{field}/
-    products/{target}_{filter}[_setup]_drc.fits
+    products/{field}_{filter}[_setup]_drc.fits
     index.html                  # start here: offline reduction and QA report
     intermediate/
       catalogs/                 # shared Gaia/Legacy cached cones and provenance

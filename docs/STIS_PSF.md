@@ -1,9 +1,36 @@
 # Empirical STIS G140L PSF calibration
 
+[Home](../README.md) · [STIS reduction](WORKFLOWS.md#stis-reduction) · [Installation](INSTALLATION.md) · [UVIS PSFs](uvis-psf.md)
+
 `hstpipe stis psf --config /path/to/workdir/config/psf.yaml --stage all` builds
 calibration-star products using the existing STIS reduction stages. The working
 directory contains data and configurations only. Optional dependencies are
 available through the `psf` extra; the existing HST environment can be reused.
+
+## Install and run
+
+From the package checkout, install the STIS PSF extra into your science environment:
+
+```sh
+python -m pip install -e '.[psf]'
+hstpipe stis psf --config /path/to/workdir/config/psf.yaml --stage all
+```
+
+The `psf` extra includes the STIS Python dependencies. The native reduction and
+recalibration stages also require the [patched HSTCAL setup](INSTALLATION.md#manual-or-instrument-only-installation)
+and appropriate calibration references.
+
+Run one stage by replacing `all` with `discover`, `preview`, `download`,
+`recalibrate`, `screen`, `reduce`, `extract`, `library`, `validate`, `report`,
+or `plot`. These stages execute in that order for `all`. For example, to validate
+an existing library and refresh its report:
+
+```sh
+hstpipe stis psf --config /path/to/workdir/config/psf.yaml --stage validate
+hstpipe stis psf --config /path/to/workdir/config/psf.yaml --stage report
+```
+
+## Configuration and method
 
 The PSF configuration uses the standard `input`, `output`, `instrument`, and
 `options` schema. `options.psf` references selection and reduction YAML files.

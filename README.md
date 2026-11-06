@@ -10,6 +10,8 @@ configuration, diagnostics, and processing record alongside the products.
 | Reduce UVIS images | [UVIS user guide](docs/uvis.md) |
 | Understand a UVIS report or approve a reviewed image | [Review and publication](docs/uvis.md#review-and-publication) |
 | Reduce STIS spectra | [STIS workflow](docs/WORKFLOWS.md#stis-reduction) |
+| Build STIS empirical PSFs or collapse library profiles | [STIS PSF guide](docs/STIS_PSF.md) |
+| Build UVIS empirical and drizzled PSFs | [UVIS PSF guide](docs/uvis-psf.md) |
 | Remove regenerable UVIS diagnostics | [Cleanup](docs/uvis.md#cleanup) |
 | Understand the code | [Architecture](docs/ARCHITECTURE.md) |
 
@@ -103,6 +105,38 @@ example, control-image requirements, and product definitions. Outputs remain
 under `redux/{target}/stis/{grating}/`. Other STIS modes, ACS, and COS are not
 currently supported.
 
+## Generate PSFs
+
+Both instruments have PSF workflows separate from their science-reduction commands.
+They use different configuration schemas; follow the guide for the instrument.
+
+### STIS FUV-MAMA/G140L
+
+```sh
+python -m pip install -e '.[psf]'
+hstpipe stis psf --config configs/stis_psf.yaml --stage all
+```
+
+Build calibration-star PSF libraries using native and drizzled STIS profiles,
+with wavelength/aperture selection, validation, and diagnostic plots.
+`hstpipe stis psf-collapse` also projects explicitly selected library templates
+onto requested spatial bins and collapses them with wavelength weights.
+See the [STIS PSF guide](docs/STIS_PSF.md) for configuration, stages, products,
+and scientific limitations. The STIS reduction stages require the patched
+[HSTCAL installation](docs/INSTALLATION.md#manual-or-instrument-only-installation).
+
+### WFC3/UVIS2
+
+```sh
+python -m pip install -e '.[uvis-psf]'
+hstpipe uvis psf --config configs/uvis_psf.yaml --stage all
+```
+
+Build archival empirical-v2 stacks and drizzle them onto retained science-product
+grids, with optional exact-filter Anderson models, provenance, and validation.
+See the [UVIS PSF guide](docs/uvis-psf.md) for configuration, stages, products,
+and scientific limitations.
+
 ## Use from Python
 
 ```python
@@ -125,11 +159,3 @@ YAML filename, a `ReductionConfig`, or an equivalent dictionary.
 
 Historical test counts and target results describe particular runs. For current
 science readiness, use the target's report and `manifest.json`.
-
-### UVIS PSF generation
-
-Install `hstpipe[uvis-psf]`, then run `hstpipe uvis psf --config psf.yaml`.
-This separate workflow builds archival UVIS2 empirical stacks and drizzles them
-onto retained science-product grids. It supports existing Erebus caches, optional
-exact-filter Anderson models, per-stage execution, provenance, and validation.
-See [UVIS PSF configuration and limitations](docs/uvis-psf.md).

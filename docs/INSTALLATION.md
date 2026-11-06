@@ -75,6 +75,18 @@ python -m pip install -e '.[stis]'
 python -m pip install -e '.[uvis]'
 ```
 
+PSF generation has additional dependency extras, each including its instrument's
+Python reduction dependencies:
+
+```sh
+python -m pip install -e '.[psf]'       # STIS empirical PSF calibration
+python -m pip install -e '.[uvis-psf]'  # UVIS2 empirical and drizzled PSFs
+```
+
+See the [STIS PSF guide](STIS_PSF.md) and [UVIS PSF guide](uvis-psf.md)
+for their separate configuration schemas and commands. STIS PSF reduction and
+recalibration also need the HSTCAL build described below.
+
 `requirements.txt` refers to the package extras in `pyproject.toml`; it does not
 build HSTCAL or provide calibration data. These Python-only commands can be tried
 on other platforms, but a complete native macOS/Windows setup is not validated.

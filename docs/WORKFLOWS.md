@@ -5,6 +5,9 @@
 Use this page for the STIS configuration and shared restart behavior. UVIS has a
 [separate user guide](uvis.md) covering its report, image review, and cleanup.
 
+For calibration-star PSF generation, use the [STIS PSF guide](STIS_PSF.md)
+or [UVIS PSF guide](uvis-psf.md). These have their own commands and configurations.
+
 ## Choose an instrument
 
 | Instrument | Input | Output directory |

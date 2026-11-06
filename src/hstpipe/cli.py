@@ -14,6 +14,10 @@ def main(argv=None):
             if instrument=='uvis':p.add_argument('--field',help='Name one field/mosaic from the input exposures, independent of TARGNAME')
             p.add_argument('--target');p.add_argument('--grating' if instrument=='stis' else '--filter',dest='element');p.add_argument('--setup')
             p.add_argument('--dry-run',action='store_true');p.add_argument('--force',action='store_true');p.add_argument('--resume',action='store_true')
+        if instrument=='uvis':
+            p=commands.add_parser('psf',help='Build archival UVIS2 empirical and product-matched drizzled PSFs')
+            p.add_argument('--config',required=True)
+            p.add_argument('--stage',choices=['all','pilot','empirical','drizzle','validate'],default='all')
         if instrument=='stis':
             p=commands.add_parser('psf',help='Build empirical calibration-star PSF products')
             p.add_argument('--config',required=True)
@@ -56,7 +60,10 @@ def main(argv=None):
         from .stis.acquisition import plot_acquisitions
         plot_acquisitions(args.acquisition,args.science,args.output,cutout_size_arcsec=args.cutout_size);return
     if args.command=='psf':
-        from .stis.psf.cli import run
+        if args.instrument=='uvis':
+            from .uvis.psf.cli import run
+        else:
+            from .stis.psf.cli import run
         run(args.config,args.stage);return
     if args.command=='report':
         from pathlib import Path

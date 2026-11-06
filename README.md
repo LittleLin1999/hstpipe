@@ -125,3 +125,11 @@ YAML filename, a `ReductionConfig`, or an equivalent dictionary.
 
 Historical test counts and target results describe particular runs. For current
 science readiness, use the target's report and `manifest.json`.
+
+### UVIS PSF generation
+
+Install `hstpipe[uvis-psf]`, then run `hstpipe uvis psf --config psf.yaml`.
+This separate workflow builds archival UVIS2 empirical stacks and drizzles them
+onto retained science-product grids. It supports existing Erebus caches, optional
+exact-filter Anderson models, per-stage execution, provenance, and validation.
+See [UVIS PSF configuration and limitations](docs/uvis-psf.md).

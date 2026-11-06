@@ -141,14 +141,18 @@ def test_documented_client_dispatch(monkeypatch):
     calls=[]
     class Job:
         def get_results(self):return gaia()
-    monkeypatch.setitem(sys.modules,'astroquery.gaia',types.SimpleNamespace(Gaia=types.SimpleNamespace(launch_job_async=lambda q,**kw:(calls.append(('gaia',q,kw)) or Job()))))
+    class GaiaClient:
+        def __init__(self,**kw):calls.append(('gaia_client',kw))
+        def launch_job_async(self,q,**kw):calls.append(('gaia',q,kw));return Job()
+    monkeypatch.setitem(sys.modules,'astroquery.gaia',types.SimpleNamespace(GaiaClass=GaiaClient))
     assert len(c._request('gaia_dr3','SELECT test',c.TAP_URL))==8
     class Service:
         def __init__(self,url):calls.append(('url',url))
         def run_sync(self,q):calls.append(('pyvo',q));return types.SimpleNamespace(to_table=lambda:legacy())
     monkeypatch.setitem(sys.modules,'pyvo',types.SimpleNamespace(dal=types.SimpleNamespace(TAPService=Service)))
     assert len(c._request('legacy_dr10','SELECT tractor',c.TAP_URL))==8
-    assert calls[0][2]=={'dump_to_file':False} and calls[1]==('url',c.TAP_URL)
+    assert calls[0]==('gaia_client',dict(gaia_tap_server='https://gea.esac.esa.int/',tap_server_context='tap-server',show_server_messages=False))
+    assert calls[1][2]==dict(output_format='votable',dump_to_file=False) and calls[2]==('url',c.TAP_URL)
 
 
 def test_malformed_refresh_preserves_previous_cache(monkeypatch,tmp_path):

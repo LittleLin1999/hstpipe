@@ -116,16 +116,24 @@ def test_migration_bytes_cache_config_and_recovery(flc,tmp_path):
     assert cfg['filter_overrides']['F336W']['drizzle']['final_pixfrac']==.7
     state=json.loads((d/'manifest.json').read_text());assert set(state['filters'])=={'F275W','F336W'}
     for f in ('F275W','F336W'):
-        receipt=StageCache(d/'.cache'/f'TEST_{f}')
+        receipt=ReductionPaths.from_directory(d,f).cache()
         for stage in ('reduction','uvis_background','uvis_alignment','uvis_cr'):
-            key=json.loads((receipt.directory/f'{stage}.json').read_text())['key'];assert receipt.valid(stage,key)
+            assert not receipt.receipt(stage).exists()
+        legacy_cache=StageCache(backup/f/'.cache')
+        for stage in ('reduction','uvis_upstream','uvis_cr'):
+            assert legacy_cache.receipt(stage).exists()
+        assert state['filters'][f]['migration']['requires_revalidation']
         assert (d/f'intermediate/alignment/TEST_{f}_registration.ecsv').exists()
-    # Resume each migrated filter must not call any scientific processing.
-    def forbidden(*args):raise AssertionError('Migration unnecessarily reprocessed a valid product')
-    run(ReductionConfig(**cfg),forbidden)
+    # A path migration preserves products but cannot stand in for scientific validation.
+    calls=[]
+    def revalidate(config,paths,rows):
+        calls.append(config.element)
+        return [paths.product('drc')]
+    run(ReductionConfig(**cfg),revalidate)
+    assert calls==['F275W','F336W']
     assert identity(backup/'F275W/products/TEST_F275W_drc.fits')['sha256']==before['TEST_F275W_drc.fits']
     # Replacing a prepared file in the new layout cannot alter its recovery link.
-    prepared=d/'intermediate/alignment/a_flc.fits';saved=identity(backup/'F275W/intermediate/alignment/prepared/a_flc.fits')
+    prepared=d/'intermediate/working/a_flc.fits';saved=identity(backup/'F275W/intermediate/alignment/prepared/a_flc.fits')
     paths=ReductionPaths(out,'TEST','uvis','F275W');paths.detach(prepared);shutil.copy2(raw/'a_flc.fits',prepared)
     assert identity(backup/'F275W/intermediate/alignment/prepared/a_flc.fits')==saved
 
@@ -204,3 +212,16 @@ def test_failed_selected_filter_can_retry_later_validated_anchor(flc,tmp_path,di
     assert all(r['scientific_assessment']['astrometry']['status']=='validated' for r in state['filters'].values())
     calls.clear();cfg.element='F275W';run(cfg,engine)
     assert calls==[]
+
+
+def test_legacy_migration_does_not_certify_current_scientific_processing(flc,tmp_path):
+    from hstpipe.uvis.storage import reduction_key
+    raw=tmp_path/'raw';raw.mkdir();out=tmp_path/'redux'
+    old=legacy_group(flc,raw,out,'a','F275W')
+    original=identity(old/'products/TEST_F275W_drc.fits')['sha256']
+    migrate_uvis(out)
+    paths=ReductionPaths(out,'TEST','uvis','F275W');cache=paths.cache()
+    cfg=yaml.safe_load((paths.directory/'config.yaml').read_text())
+    key=reduction_key(cache,discover(raw),settings(cfg['options']))
+    assert not cache.valid('reduction',key), 'A layout move cannot certify current source/sky validation'
+    assert identity(paths.product('drc'))['sha256']==original

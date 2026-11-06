@@ -33,3 +33,11 @@ def no_live_identification_queries(monkeypatch):
     def offline(*a,**kw):raise CatalogQueryError('Unit tests use mocked external-identification catalogs')
     monkeypatch.setattr(identification,'query_gaia_dr3',offline)
     monkeypatch.setattr(identification,'query_legacy_dr10',offline)
+
+
+@pytest.fixture(autouse=True)
+def fresh_catalog_failure_cache():
+    from hstpipe.uvis.astrometry.catalogs import _FAILED_REQUESTS
+    _FAILED_REQUESTS.clear()
+    yield
+    _FAILED_REQUESTS.clear()

@@ -27,3 +27,10 @@ publication-view protection, recovery paths, and concurrent execution checks
 pass. The suite is not fully green: existing catalog-client, centroid/DQ-policy,
 legacy migration/cache, and pipeline fixture failures remain. This validation
 establishes no new test failures; it does not certify new scientific reductions.
+
+## Follow-up bug fixes
+
+The historical failures above were resolved in the subsequent
+[UVIS bug-fix validation](bugfix-validation-20261106.md): 429 passed, no failures,
+and one opt-in integration test skipped. The earlier table is retained as the
+synchronization baseline.

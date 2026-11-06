@@ -140,3 +140,15 @@ def test_recovery_keeps_valid_source_with_false_inherited_core_flag(flc):
     records=recover_missing(inputs,cats,common,opts['detection'],opts)
     r=records[0];assert r['status']=='measured_candidate' and r['centroid_ignore_bits']==4096
     assert len(r['mask_attempts'])==1 and abs(r['x']-20)<.1
+
+
+def test_empty_external_associations_leave_hst_only_candidates_unchanged(flc):
+    inputs,cats,_=example(flc)
+    external=Table(names=['source_id','exposure','status'],dtype=['U64']*3)
+    opts=settings({})['astrometry']
+    selected,common,report=build_common(inputs,cats,external,opts['relative'])
+    assert len(common)>0 and any(len(c) for c in selected)
+    before=[c.copy() for c in cats];original=common.copy()
+    assert resolve_repeated_counterparts(inputs,cats,common,external,opts['source_identification'])==[]
+    assert len(external)==0 and np.all(common==original)
+    assert all(np.all(a==b) for a,b in zip(cats,before))

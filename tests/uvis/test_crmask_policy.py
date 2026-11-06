@@ -39,13 +39,16 @@ def test_inherited_cr_core_recovered_with_other_flags_preserved(tmp_path,version
   hd['DQ',version].data[25,25]=4096|bit
   _,b,m=pixel_masks(hd,version,{'edge_pixels':0})
   assert b[25,25] and m[25,25]
-  if bit!=256:assert not m[25,26]  # ordinary detector flags do not grow
+  assert bool(m[25,26])==(bit==8192)  # Only calwf3 CR flags grow on original inputs.
 
-@pytest.mark.parametrize('run_cr,expected',[(True,4096),(False,0)])
-def test_split_stage_resetbits(monkeypatch,run_cr,expected):
+@pytest.mark.parametrize('run_cr,fresh,expected',[(True,False,4096),(True,True,4096),(False,False,4096),(False,True,0)])
+def test_split_stage_resetbits(flc,monkeypatch,run_cr,fresh,expected):
  from drizzlepac import astrodrizzle
  from hstpipe.uvis.drizzle import drizzle
  seen={}
  monkeypatch.setattr(astrodrizzle,'AstroDrizzle',lambda inputs,**kw:seen.update(kw))
- drizzle(['working_a_flc.fits','working_b_flc.fits'],'test',{'driz_cr':run_cr})
+ files=[flc('working_a'),flc('working_b')]
+ for p in files:
+  with fits.open(p,mode='update') as hd:hd[0].header['HPCRRUN']=fresh
+ drizzle(files,'test',{'driz_cr':run_cr})
  assert seen['resetbits']==expected

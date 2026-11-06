@@ -343,8 +343,11 @@ Migration preflights conflicts and configuration differences before changing fil
 Original trees remain in `{target}/.uvis-legacy-*` for legacy migrations. FITS files are verified
 byte-for-byte and linked rather than duplicated. Subsequent writes replace
 inodes atomically so recovery links remain intact. Small text/config/provenance
-files are independent and paths are remapped. Valid legacy receipts are converted
-to the new per-group cache layout; incomplete groups remain incomplete. Existing
+files are independent and paths are remapped. Receipts from the old nested
+per-filter layout stay in the recovery tree; they do not certify current
+scientific processing. The migrated manifest records `requires_revalidation`,
+and the next reduction run repeats the required checks. Migration itself does
+not run scientific processing or change product bytes. Existing
 relative-only outputs are preserved, but the new two-pass default must validate
 absolute astrometry before claiming an absolute-calibrated final product.
 Conflicting filenames, ambiguous setups, differing raw input directories or

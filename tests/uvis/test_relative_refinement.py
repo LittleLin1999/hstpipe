@@ -139,7 +139,7 @@ def test_better_catalogs_can_validate_original_without_any_correction(flc,tmp_pa
     files=[flc('one',size=256),flc('two',size=256)];before=[identity(p) for p in files]
     def catalog(p,options,extended=False,width=3.5,**kwargs):
         xy=np.array([[20,20],[100,20],[230,20],[20,100],[230,100],[20,230],[100,230],[230,230]])
-        if not extended:xy=xy[:2]
+        if not extended:xy=xy[:1]
         with fits.open(p) as hd:world=WCS(hd['SCI'].header,hd).all_pix2world(xy,0)
         return Table(dict(x=xy[:,0],y=xy[:,1],ra=world[:,0],dec=world[:,1],flux=np.full(len(xy),100),extver=np.full(len(xy),7),centroid_error_pix=np.full(len(xy),.1)))
     monkeypatch.setattr(engine,'sources',catalog)
@@ -149,6 +149,7 @@ def test_better_catalogs_can_validate_original_without_any_correction(flc,tmp_pa
     for a,s in [('intermediate','alignment'),('intermediate','drizzle'),('diagnostics','alignment')]:paths.area(a,s,create=True)
     report=engine.refine_relative(files,paths,dict(options,methods=['improved_catalogs']))
     assert report['status']=='validated' and report['method']=='existing_wcs_improved_catalogs'
+    assert report['pairs'][0]['matched']==8
     assert [identity(p) for p in files]==before
 
 
@@ -159,14 +160,18 @@ def test_requested_user_initialization_remains_supported(flc,tmp_path,monkeypatc
         assert args[3]['mode']=='user'
         raise RuntimeError('requested initialization reached')
     monkeypatch.setattr(pipeline,'register',user)
-    with pytest.raises(RuntimeError,match='requested initialization reached'):
-        pipeline.reduce_uvis(dict(input=str(raw),output=str(tmp_path/'redux'),instrument='uvis',options={'alignment':{'mode':'user','transformations':{'test':{'dx':0,'dy':0}}}}))
+    outputs=pipeline.reduce_uvis(dict(input=str(raw),output=str(tmp_path/'redux'),instrument='uvis',options={'alignment':{'mode':'user','transformations':{'test':{'dx':0,'dy':0}}}}))
+    import json
+    state=json.loads((outputs[0]/'manifest.json').read_text())['filters']['F275W']
+    assert state['status']=='failed' and 'requested initialization reached' in state['error']
+    assert not state.get('products')
 
 
-def test_segment_centroid_inside_masked_core_is_rejected(flc,options):
+@pytest.mark.parametrize('bit,fresh',[(16,False),(256,False),(2048,False),(8192,False),(4096,True)])
+def test_segment_centroid_inside_masked_core_is_rejected(flc,options,bit,fresh):
     from hstpipe.uvis.astrometry.sources import sources
     p=flc(size=256)
-    with fits.open(p,mode='update') as hd:hd['DQ',7].data[127:130,127:130]=4096
+    with fits.open(p,mode='update') as hd:hd['DQ',7].data[127:130,127:130]=bit;hd[0].header['HPCRRUN']=fresh
     catalog=sources(p,options['detection'],True,6)
     assert not np.any(np.hypot(catalog['x']-128,catalog['y']-128)<4)
 

@@ -1,6 +1,6 @@
 """TweakReg candidate fits are accepted only after measured quality checks."""
 from pathlib import Path
-import shutil,os
+import shutil,os,tempfile
 import numpy as np
 from astropy.io import fits
 
@@ -44,7 +44,7 @@ def register(inputs,directory,diagnostics,options,*,paths=None):
         if mode in ('relative','external'):raise RuntimeError('Requested alignment cannot be constrained: insufficient PSF-like sources')
         return report
     previous=Path.cwd()
-    with paths.scratch('candidate-') as tmp:
+    with (paths.scratch('candidate-') if paths else tempfile.TemporaryDirectory(prefix='hstpipe-candidate-')) as tmp:
         work=Path(tmp);candidates=[]
         for p in inputs:
             dest=work/p.name;shutil.copy2(p,dest);candidates.append(dest)

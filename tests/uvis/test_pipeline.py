@@ -56,14 +56,15 @@ def test_cr_core_flag_and_detector_bits(flc,tmp_path):
     p=flc();work=tmp_path/'work.fits';shutil.copy2(p,work)
     with fits.open(work,mode='update') as h:h['DQ',7].data[62:68,62:68]|=4096
     report=cr_report(p,work,tmp_path/'mask.fits',tmp_path,.001)
-    assert report[0]['warnings'] and report[0]['bright_source_cr_fraction']>0
+    assert report[0]['source_validation_required'] and report[0]['bright_source_cr_fraction']>0
+    assert report[0]['new_cr_fraction']>0 and report[0]['target_cr_fraction']>0
     with fits.open(tmp_path/'mask.fits') as h:assert h['SCI',7].data.sum()==36
 
 def test_drizzle_configuration(monkeypatch,tmp_path):
     from hstpipe.uvis.drizzle import drizzle
     calls=[];monkeypatch.setitem(sys.modules,'drizzlepac',types.SimpleNamespace(astrodrizzle=types.SimpleNamespace(AstroDrizzle=lambda *a,**kw:calls.append(kw))))
     drizzle(['a','b'],tmp_path/'out',settings({})['drizzle']);o=calls[0]
-    assert o['resetbits']==0 and not o['skysub'] and o['skyuser']=='HPSKY'
+    assert o['resetbits']==4096 and not o['skysub'] and o['skyuser']=='HPSKY'
     assert o['final_wcs'] and o['final_scale']==.04 and o['final_wht_type']=='EXP'
     assert o['build'] and o['context'] and o['driz_cr'] and not o['driz_cr_corr']
 
@@ -85,9 +86,11 @@ def test_mock_full_reduction_and_stage_reuse(flc,tmp_path,monkeypatch):
     [out]=reduce_uvis(c);product=out/'products/TEST_F275W_drc.fits';validate_drizzle(product)
     with fits.open(product) as h:
         assert [x.name for x in h]==['PRIMARY','SCI','WHT','CTX'];assert h['WHT'].header['WHTTYPE']=='EXP';assert not h[0].header['HPCRCLN']
-    receipt=(out/'.cache/TEST_F275W/uvis_alignment.json').read_bytes();cr=(out/'.cache/TEST_F275W/uvis_cr.json').read_bytes()
+    from hstpipe.common.paths import ReductionPaths
+    cache=ReductionPaths.from_directory(out,'F275W').cache()
+    receipt=cache.receipt('uvis_alignment').read_bytes();cr=cache.receipt('uvis_cr').read_bytes()
     c.options['drizzle']={'final_scale':.03};reduce_uvis(c)
-    assert (out/'.cache/TEST_F275W/uvis_alignment.json').read_bytes()==receipt and (out/'.cache/TEST_F275W/uvis_cr.json').read_bytes()==cr
+    assert cache.receipt('uvis_alignment').read_bytes()==receipt and cache.receipt('uvis_cr').read_bytes()==cr
     assert identity(raw/p.name)==before
     assert json.loads((out/'manifest.json').read_text())['filters']['F275W']['scientific_assessment']['status']=='review_required'
     assert len(calls)==2
@@ -151,11 +154,13 @@ def test_existing_detector_dq_cannot_reset(flc,tmp_path):
 @pytest.mark.parametrize('rms,accepted',[(0.1,True),(1.0,False)])
 def test_tweakreg_candidate_acceptance(flc,tmp_path,monkeypatch,rms,accepted):
     from hstpipe.uvis import alignment
-    import photutils.detection
-    from astropy.table import Table
-    catalog=Table(dict(xcentroid=np.arange(20.),ycentroid=np.arange(20.),flux=np.ones(20)))
-    monkeypatch.setattr(photutils.detection,'DAOStarFinder',lambda *a,**k:lambda *a,**k:catalog)
-    inputs=[flc('one'),flc('two')];before=[identity(p) for p in inputs]
+    inputs=[flc('one',size=256),flc('two',size=256)]
+    for p in inputs:
+        with fits.open(p,mode='update') as hd:
+            y,x=np.indices(hd['SCI',7].shape)
+            for xx in (30,80,130,180,230):
+                for yy in (30,80,180,230):hd['SCI',7].data+=500*np.exp(-((x-xx)**2+(y-yy)**2)/(2*1.3**2))
+    before=[identity(p) for p in inputs]
     def fake_align(paths,options):
         lines=[]
         for p in paths:

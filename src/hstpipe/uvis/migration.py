@@ -1,17 +1,16 @@
 """Audited, recoverable migration of legacy UVIS layouts; FITS bytes never change."""
-import copy,json,os,re,shutil,time
+import json,os,re,shutil,time
 from pathlib import Path
-from collections import defaultdict
 import yaml
 from ..common.paths import ReductionPaths
 from ..common.cache import StageCache
-from ..common.provenance import identity,versions
+from ..common.provenance import identity
 from ..common.config import ReductionConfig
 from ..common.target_runner import target_lock,save
 from .config import settings
 from .inventory import discover
 from .grouping import group_exposures
-from .storage import stage_keys,reduction_key,registration_table
+from .storage import registration_table
 
 
 def _delta(base,value):
@@ -144,16 +143,9 @@ def migrate_uvis(output,*,target=None,dry_run=False):
                     reg=paths.file('intermediate','alignment','registration','ecsv')
                     if upstream:
                         save(bg,{k:upstream[k] for k in ('exposures','background')});save(al,upstream['alignment']);registration_table(reg,upstream['alignment'])
-                    active=[e for e in rows if e.path.name not in opts['exclude'] and e.metadata['ROOTNAME'] not in opts['exclude']]
-                    copies=[paths.exposure_file('intermediate','alignment',e.metadata['ROOTNAME'],'flc') for e in active]
-                    cache=paths.cache();bgkey,alkey,crkey=stage_keys(cache,active,opts,copies)
-                    if plan['valid']['uvis_upstream'] and upstream:
-                        models=[dst for src,dst in mapping.items() if dst.parent==paths.area('intermediate','background') and dst.suffix=='.fits']
-                        cache.record('uvis_background',bgkey,models+[bg]);cache.record('uvis_alignment',alkey,copies+[al,reg])
-                    cr=paths.file('intermediate','drizzle','cr')
-                    if plan['valid']['uvis_cr'] and crkey and cr.exists():
-                        masks=[paths.exposure_file('intermediate','drizzle',e.metadata['ROOTNAME'],'crmask') for e in active]
-                        cache.record('uvis_cr',crkey,masks+[cr])
+                    # Legacy combined-stage receipts do not prove that today's
+                    # source, sky and registration checks ran. Preserve them in
+                    # the recovery tree, never mint current scientific keys.
                     qa=paths.file('diagnostics','drizzle','qa_summary')
                     assessment=json.loads(qa.read_text()) if qa.exists() else _translate(old.get('scientific_assessment',{}),mapping,legacydir,paths)
                     artifacts=[identity(dst) for dst in sorted(set(mapping.values())|{bg,al,reg}) if dst.exists() and 'logs' not in dst.relative_to(directory).parts]
@@ -163,10 +155,8 @@ def migrate_uvis(output,*,target=None,dry_run=False):
                         observing_configurations=[e.metadata for e in rows],grouping_decisions=[e.metadata.get('grouping_reason') for e in rows],
                         scientific_assessment=assessment,products=products,artifacts=artifacts,
                         intermediate_files=[a for a in artifacts if 'intermediate' in Path(a['path']).relative_to(directory).parts],
-                        versions=old.get('versions',{}),migration=dict(legacy=str(backup/legacydir.relative_to(directory)),receipts_preserved=plan['valid']))
+                        versions=old.get('versions',{}),migration=dict(legacy=str(backup/legacydir.relative_to(directory)),receipts_preserved=plan['valid'],requires_revalidation=True))
                     state['filters'][paths.group_key]=record
-                    if old['status']=='complete' and plan['valid']['reduction'] and products:
-                        cache.record('reduction',reduction_key(cache,rows,opts),[Path(a['path']) for a in artifacts])
                 config=plans[0]['cfg'].effective();config.update(target=directory.parent.name,element=None,setup=None,options=common,filter_overrides={k:v for k,v in overrides.items() if v},resume=True,force=False)
                 save(directory/'config.yaml',config,True);save(directory/'manifest.json',state)
                 summary.update(status='verified',backup=str(backup));save(directory/'migration.json',summary)

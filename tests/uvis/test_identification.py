@@ -51,12 +51,14 @@ def test_bounded_local_search_measures_hst_not_predicted_centroid(flc,options):
     assert abs(result['x']-128)<.3 and abs(result['predicted_x']-result['x'])>4
 
 
-def test_masked_core_is_not_rescued_by_external_expectation(flc,options):
+@pytest.mark.parametrize('bit,fresh',[(16,False),(256,False),(2048,False),(8192,False),(4096,True)])
+def test_masked_core_is_not_rescued_by_external_expectation(flc,options,bit,fresh):
     p=flc(size=256)
     with fits.open(p,mode='update') as hd:
-        world=WCS(hd['SCI'].header,hd).all_pix2world([[128,128]],0)[0];hd['DQ',7].data[125:132,125:132]=4096
+        world=WCS(hd['SCI'].header,hd).all_pix2world([[128,128]],0)[0];hd['DQ',7].data[125:132,125:132]=bit;hd[0].header['HPCRRUN']=fresh
     result=i.associate(p,candidate(*world),options['source_identification'],options['relative']['detection'])
-    assert result['status']!='valid_detection' and result['status'] in ('detected_rejected','covered_undetected','ambiguous_association')
+    assert result['status'] in ('detected_rejected','covered_undetected','ambiguous_association','no_reliable_stellar_profile')
+    assert np.isnan(result['x']) and np.isnan(result['y'])
 
 
 def test_duplicate_catalog_ids_merge_but_legacy_psf_is_not_declared_star(options):
@@ -73,7 +75,9 @@ def test_multiple_plausible_hst_sources_are_ambiguous(flc,options):
         y,x=np.indices((256,256));hd['SCI'].data+=100*np.exp(-((x-143)**2+(y-128)**2)/4)
         world=WCS(hd['SCI'].header,hd).all_pix2world([[128,128]],0)[0]
     result=i.associate(p,candidate(*world),options['source_identification'],options['relative']['detection'])
-    assert result['status']=='ambiguous_association',result
+    assert result['status']=='ambiguous_stellar_profiles',result
+    assert np.isnan(result['x']) and np.isnan(result['y'])
+    assert sum(f['status']=='credible_stellar_fit' for f in result['psf_audit']['fits'])>=2
 
 
 def test_shared_identity_defeats_wrong_histogram_peak_and_ignores_external_ra(options):
@@ -112,7 +116,7 @@ def test_common_source_need_not_be_present_in_every_exposure(flc,tmp_path,monkey
     monkeypatch.setattr(i,'legacy_at_epoch',lambda t,e:t)
     def detection(p,c,*a,**kw):
         return dict(hst_source_id=str(a[0]['hst_source_id'][0]),source_id=c['source_id'],exposure=p.name,status='not_covered' if p.name.startswith('c') else 'valid_detection',x=64.,y=64.,extver=7,
-            classification='legacy_point_candidate',gaia_id='',legacy_id='l',width_pix=1.3,ellipticity=.1,flux_rate=1.,snr=50.,centroid_error_pix=.1)
+            classification='legacy_point_candidate',gaia_id='',legacy_id='l',reason='',predicted_x=64.,predicted_y=64.,width_pix=1.3,ellipticity=.1,flux_rate=1.,snr=50.,centroid_error_pix=.1)
     monkeypatch.setattr(i,'associate_full_field',detection)
     report=i.identify(files,paths,options)
     assert len(report['catalogs'][0])==len(report['catalogs'][1])==1 and len(report['catalogs'][2])==0
@@ -181,4 +185,5 @@ def test_saturated_star_is_reported_and_detached_halo_not_used(flc,options):
         world=WCS(hd['SCI'].header,hd).all_pix2world([[128,128]],0)[0]
         hd['DQ',7].data[127:130,127:130]=256|4096
     result=i.associate(p,candidate(*world),options['source_identification'],options['relative']['detection'])
-    assert result['status']=='saturated_source_in_window' and np.isnan(result['x'])
+    assert result['status']=='detected_rejected' and np.isnan(result['x']) and np.isnan(result['y'])
+    assert result['rejected_candidates']>0

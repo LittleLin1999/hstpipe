@@ -134,7 +134,9 @@ def resolve_repeated_counterparts(inputs,catalogs,common,associations,options):
     Missing exposures are not filled with projected positions. Catalog windows
     identify objects only; all returned positions remain measured HST pixels.
     """
-    if not len(common):return []
+    # HST-only registration is valid when no external catalog candidates exist.
+    # There is no external counterpart to resolve, so preserve HST candidates.
+    if not len(common) or not len(associations):return []
     associations['reason']=np.asarray(associations['reason']).astype('U512')
     associations['centroid_method']=np.asarray(associations['centroid_method']).astype('U64')
     associations['hst_source_id']=np.asarray(associations['hst_source_id']).astype('U128')
